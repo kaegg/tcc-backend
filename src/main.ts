@@ -1,4 +1,3 @@
-import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -24,15 +23,6 @@ async function bootstrap() {
           fontSrc: ["'self'", 'data:'],
         },
       },
-    }),
-  );
-
-  // Validacao global dos DTOs.
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
     }),
   );
 

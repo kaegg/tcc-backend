@@ -97,6 +97,34 @@ avisando que nenhuma query vai funcionar.
 | `npm run prisma:reset` | Recria o banco do zero e reaplica todas as migrações |
 | `npm run prisma:studio` | Abre o Prisma Studio |
 
+## Padrões da API REST
+
+Validação, serialização e tratamento de exceções são registrados como providers em
+`src/common/common.module.ts` (via `APP_PIPE`, `APP_INTERCEPTOR` e `APP_FILTER`) em vez de em
+`main.ts`. Assim os testes e2e, que montam a aplicação pelo módulo, exercitam exatamente a mesma
+configuração que roda em produção.
+
+- **Validação global** — `ValidationPipe` com `whitelist` (remove campo não declarado no DTO) e
+  `forbidNonWhitelisted` (rejeita a requisição que enviar um).
+- **Serialização** — `ClassSerializerInterceptor`, para que `@Exclude()` em campo como senha valha
+  em toda resposta.
+- **Erros** — `AllExceptionsFilter` devolve sempre o mesmo corpo:
+
+```json
+{
+  "statusCode": 404,
+  "error": "Not Found",
+  "message": "Lançamento não encontrado",
+  "path": "/transactions/42",
+  "timestamp": "2026-08-26T15:51:19.589Z"
+}
+```
+
+Exceções que não são `HttpException` (falha do Prisma, bug, banco fora do ar) nunca têm o texto
+original repassado ao cliente — viram uma mensagem genérica com status 500. O detalhe técnico vai
+só para o log do servidor, e ainda assim passa por `redactSecrets()`, que mascara credenciais em
+string de conexão e em campos como `password`, `token` e `senha`.
+
 ## Estrutura
 
 ```
@@ -104,10 +132,21 @@ prisma/
   schema.prisma          # modelos e generator (TCC-005)
 prisma.config.ts         # configuração do CLI (schema, migrations, DATABASE_URL)
 src/
+  common/
+    common.module.ts     # pipe, interceptor e filtro globais
+    filters/             # AllExceptionsFilter
+    utils/redact.ts      # remoção de credenciais dos logs
   generated/prisma/      # Prisma Client gerado (não versionado)
-  prisma/
-    prisma.module.ts     # módulo global
-    prisma.service.ts    # ciclo de vida da conexão
+  prisma/                # PrismaModule e PrismaService
+  auth/                  # TCC-009  - login, logout, sessão
+  users/                 # TCC-008, TCC-010 - cadastro e perfil
+  transactions/          # TCC-012 a TCC-015 - lançamentos
+  categories/            # TCC-011 - categorias financeiras
+  reports/               # TCC-016, TCC-017 - relatórios
+  chat/                  # TCC-021, TCC-022 - chatbot (gateway Socket.IO)
   app.module.ts
-  main.ts                # Helmet, ValidationPipe, CORS e Swagger
+  main.ts                # Helmet, CORS e Swagger
+test/
+  app.e2e-spec.ts
+  error-handling.e2e-spec.ts   # prova o formato de erro e o não vazamento
 ```
