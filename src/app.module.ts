@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { CommonModule } from './common/common.module';
+import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -16,6 +15,7 @@ import { ChatModule } from './chat/chat.module';
     ConfigModule.forRoot({ isGlobal: true }),
     CommonModule,
     PrismaModule,
+    HealthModule, // TCC-006 - disponibilidade da API e do banco
     AuthModule, // TCC-009 - login, logout, sessao e controle de acesso
     UsersModule, // TCC-008 e TCC-010 - cadastro e perfil
     TransactionsModule, // TCC-012 a TCC-015 - lancamentos
@@ -23,7 +23,5 @@ import { ChatModule } from './chat/chat.module';
     ReportsModule, // TCC-016 e TCC-017 - relatorios e resumo mensal
     ChatModule, // TCC-021 e TCC-022 - chatbot e gateway Socket.IO
   ],
-  controllers: [AppController],
-  providers: [AppService],
 })
 export class AppModule {}

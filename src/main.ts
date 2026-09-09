@@ -1,37 +1,21 @@
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { API_PREFIX, configureApp } from './configure-app';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const config = app.get(ConfigService);
-
-  // Headers de seguranca.
-  // A CSP padrao do Helmet bloqueia os estilos e scripts inline do Swagger UI e
-  // a pagina da documentacao abre em branco; por isso as diretivas abaixo
-  // liberam o minimo necessario, mantendo os demais headers ativos.
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", 'data:'],
-          fontSrc: ["'self'", 'data:'],
-        },
-      },
-    }),
-  );
-
-  app.enableCors({
-    origin: config.get<string>('CORS_ORIGIN', 'http://localhost:5173'),
-    credentials: true,
+  // `bodyParser: false` desliga os parsers automaticos para que `configureApp`
+  // os registre com limite explicito de tamanho.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
   });
 
-  // Documentacao da API.
+  // Antes do Swagger: o documento so inclui o prefixo global se ele ja estiver
+  // definido quando `createDocument` roda.
+  configureApp(app);
+
   const swaggerConfig = new DocumentBuilder()
     .setTitle('IntelliFinance API')
     .setDescription(
@@ -42,11 +26,12 @@ async function bootstrap() {
     .addBearerAuth()
     .build();
   SwaggerModule.setup(
-    'api/docs',
+    `${API_PREFIX}/docs`,
     app,
     SwaggerModule.createDocument(app, swaggerConfig),
   );
 
+  const config = app.get(ConfigService);
   const port = config.get<number>('PORT', 3000);
   await app.listen(port);
 }

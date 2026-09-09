@@ -87,7 +87,7 @@ antes de rodar `npm run prisma:seed`.
 npm run start:dev
 ```
 
-- API: `http://localhost:3000`
+- API: `http://localhost:3000/api` — todas as rotas REST ficam sob o prefixo `/api`
 - Documentação Swagger: `http://localhost:3000/api/docs`
 
 Se o banco ainda não estiver configurado, a aplicação sobe assim mesmo e registra um erro no log
@@ -110,6 +110,33 @@ avisando que nenhuma query vai funcionar.
 | `npm run prisma:reset` | Recria o banco do zero, reaplica todas as migrações e roda o seed |
 | `npm run prisma:seed` | Roda o seed sem recriar o banco |
 | `npm run prisma:studio` | Abre o Prisma Studio |
+
+## Endpoints
+
+| Método | Rota | O que faz | Issue |
+|---|---|---|---|
+| `GET` | `/api/health` | Disponibilidade da API e do PostgreSQL | TCC-006 |
+| `GET` | `/api/categories` | Categorias ativas do sistema; aceita `?type=receita\|despesa` | TCC-006 |
+
+`GET /api/health` responde **200** quando tudo opera e **503** quando alguma dependência caiu, com o
+mesmo corpo nos dois casos:
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-09-02T21:57:03.482Z",
+  "uptimeSeconds": 15,
+  "dependencies": { "database": { "status": "ok", "latencyMs": 3 } }
+}
+```
+
+É o único endpoint que, fora da faixa 2xx, não usa o envelope de erro da API: lançar
+`ServiceUnavailableException` perderia a informação de **qual** dependência falhou, e o frontend
+precisa distinguir três situações — API saudável, API viva com o banco fora, e API sem resposta.
+
+O corpo é deliberadamente pobre: não traz versão, host, nome do banco nem mensagem do driver. Um
+health público que descreve a infraestrutura é reconhecimento gratuito para quem varre a rede. O
+motivo real da falha vai só para o log, já mascarado por `redactSecrets()`.
 
 ## Padrões da API REST
 
@@ -138,6 +165,50 @@ Exceções que não são `HttpException` (falha do Prisma, bug, banco fora do ar
 original repassado ao cliente — viram uma mensagem genérica com status 500. O detalhe técnico vai
 só para o log do servidor, e ainda assim passa por `redactSecrets()`, que mascara credenciais em
 string de conexão e em campos como `password`, `token` e `senha`.
+
+Erros de validação chegam com `message` como **lista de strings** (uma por violação), e não como
+string única. O cliente precisa tratar os dois formatos.
+
+### Configuração de infraestrutura
+
+Prefixo global, CORS, Helmet e os parsers de corpo ficam em `src/configure-app.ts`, chamado pelo
+`main.ts` **e** pelos testes e2e. O motivo é o mesmo dos providers acima: os testes montam a
+aplicação pelo `AppModule` e nunca executam `bootstrap()`. Com o prefixo só no `main.ts`, a suíte
+exercitaria `/categories` enquanto o processo real serve `/api/categories` — passaria provando o
+oposto do que roda.
+
+`configureApp()` precisa ser chamado **antes** de `SwaggerModule.createDocument`, senão o documento
+sai sem o prefixo e todo "Try it out" responde 404 com a API no ar.
+
+### CORS
+
+`CORS_ORIGIN` aceita uma lista separada por vírgula. As origens são normalizadas (sem barra final,
+minúsculas), porque o header `Origin` nunca traz barra final e a comparação é sensível a caixa.
+
+Origem fora da lista **não** vira erro: a resposta segue normal, apenas sem os headers de CORS, e o
+servidor registra um aviso. Rejeitar com `Error` faria o pacote `cors` repassar ao `next()`, o filtro
+global capturaria e tudo viraria 500 — inclusive requisição sem header `Origin`, que é o caso de
+`curl`, dos testes e de qualquer sonda de infraestrutura.
+
+Requisição sem `Origin` é liberada: CORS é regra de navegador, e sem `Origin` não há o que proteger.
+
+### Limite de corpo
+
+Os parsers são registrados com limite explícito de `100kb` (`NestFactory.create` recebe
+`bodyParser: false` para que `configureApp` os registre).
+
+As falhas do parser são traduzidas em `src/common/middleware/body-parser-errors.ts`, registrado logo
+depois dos parsers. Não dá para tratá-las no filtro global: o parser lança `http-errors`, não
+`HttpException`, e o Nest reescreve `SyntaxError` como `BadRequestException` com a mensagem crua do
+motor de JavaScript **antes** de qualquer filtro ver o erro. No middleware o erro ainda está inteiro.
+
+| Situação | Status | Mensagem |
+|---|---|---|
+| Corpo acima do limite | 413 | Corpo da requisição excede o limite permitido. |
+| JSON malformado | 400 | Corpo da requisição não é um JSON válido. |
+
+O texto original nunca é repassado: ele revela o limite configurado, o tamanho recebido e a posição
+do caractere que quebrou o parse.
 
 ## Banco de dados
 
@@ -211,10 +282,13 @@ prisma.config.ts         # configuração do CLI (schema, migrations, seed, DATA
 src/
   common/
     common.module.ts     # pipe, interceptor e filtro globais
+    cors-origins.ts      # lista de origens do CORS (reusada pelo gateway na TCC-022)
     filters/             # AllExceptionsFilter
+    middleware/          # tradução das falhas do body-parser
     utils/redact.ts      # remoção de credenciais dos logs
   generated/prisma/      # Prisma Client gerado (não versionado)
   prisma/                # PrismaModule, PrismaService e scopes.ts (filtros RN07/RN09)
+  health/                # TCC-006 - disponibilidade da API e do banco
   auth/                  # TCC-009  - login, logout, sessão
   users/                 # TCC-008, TCC-010 - cadastro e perfil
   transactions/          # TCC-012 a TCC-015 - lançamentos
@@ -222,9 +296,14 @@ src/
   reports/               # TCC-016, TCC-017 - relatórios
   chat/                  # TCC-021, TCC-022 - chatbot (gateway Socket.IO)
   app.module.ts
-  main.ts                # Helmet, CORS e Swagger
+  configure-app.ts       # Helmet, CORS, prefixo /api e parsers (usado por main e pelos e2e)
+  main.ts                # bootstrap e Swagger
 test/
-  app.e2e-spec.ts
+  create-test-app.ts             # monta a app como em produção, com Prisma dublado
+  app.e2e-spec.ts                # prova que o prefixo /api está ativo
+  health.e2e-spec.ts             # 200/503, timeout da sonda e não vazamento
+  categories.e2e-spec.ts         # envelope, filtro de tipo e rejeição de query
+  body-limit.e2e-spec.ts         # 413 e 400 do body-parser
   error-handling.e2e-spec.ts     # prova o formato de erro e o não vazamento
   schema-constraints.e2e-spec.ts # prova as restrições do esquema no banco real
 ```
