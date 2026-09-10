@@ -100,7 +100,10 @@ avisando que nenhuma query vai funcionar.
 | `npm run start:dev` | Sobe em modo watch |
 | `npm run build` | Compila para `dist/` (roda `prisma generate` antes) |
 | `npm run start:prod` | Executa o build |
-| `npm run lint` | ESLint com `--fix` |
+| `npm run verify` | **Roda o portão completo: lint, build, unitários e e2e** |
+| `npm run lint` | ESLint — reprova sem corrigir, e é o que o CI executa |
+| `npm run lint:fix` | ESLint corrigindo o que der (uso local) |
+| `npm run format` | Prettier reescrevendo os arquivos |
 | `npm test` | Testes unitários (Jest) |
 | `npm run test:e2e` | Testes end-to-end |
 | `npm run test:cov` | Cobertura |
