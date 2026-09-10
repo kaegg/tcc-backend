@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Cancela execucoes antigas do mesmo branch quando chega um push novo.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Somente leitura: o workflow nao escreve no repositorio nem publica nada.
+permissions:
+  contents: read
+
+jobs:
+  verificacoes:
+    # Push cobre todo commit de toda branch. O gatilho de pull_request fica so
+    # para PR vindo de fork, onde o evento de push nao chega a este repositorio.
+    # Sem esta condicao, todo commit de branch com PR aberto rodaria duas vezes.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    name: Lint, build e testes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: intellifinance_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/intellifinance_test?schema=public
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/intellifinance_test?schema=public
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run build
+
+      - run: npm test
+
+      # Sem isto, os testes de restricao de integridade se pulam sozinhos por
+      # falta de tabelas e a suite passa sem exercitar RN02, RN03, RN07 e RN09.
+      - name: Aplicar migracoes no banco de teste
+        run: npx prisma migrate deploy
+
+      - run: npm run test:e2e
