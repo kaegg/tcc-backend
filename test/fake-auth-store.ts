@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import type { App } from 'supertest/types';
+import { Prisma } from './../src/generated/prisma/client';
 import { hashPassword } from './../src/users/password';
 import type { PrismaStub } from './create-test-app';
 
@@ -45,6 +46,10 @@ export function installFakeAuthStore(prisma: PrismaStub, users: FakeUser[]) {
 
       const actual = row[key as keyof FakeSession];
 
+      if (expected && typeof expected === 'object' && 'not' in expected) {
+        return actual !== expected.not;
+      }
+
       if (expected && typeof expected === 'object' && 'gt' in expected) {
         return (actual as Date) > (expected as { gt: Date }).gt;
       }
@@ -60,6 +65,46 @@ export function installFakeAuthStore(prisma: PrismaStub, users: FakeUser[]) {
         ),
       ) ?? null,
     ),
+  );
+
+  prisma.user.update.mockImplementation(
+    ({
+      where,
+      data,
+      select,
+    }: {
+      where: { id: string };
+      data: Partial<FakeUser>;
+      select?: Record<string, boolean>;
+    }) => {
+      const row = users.find((user) => user.id === where.id);
+      if (!row) return Promise.reject(new Error('Registro nao encontrado.'));
+
+      if (
+        data.email &&
+        users.some((u) => u.id !== row.id && u.email === data.email)
+      ) {
+        return Promise.reject(
+          new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+            code: 'P2002',
+            clientVersion: '7.10.0',
+            meta: { target: ['email'] },
+          }),
+        );
+      }
+
+      Object.assign(row, data);
+      return Promise.resolve(
+        select
+          ? Object.fromEntries(
+              Object.keys(select).map((key) => [
+                key,
+                row[key as keyof FakeUser],
+              ]),
+            )
+          : { ...row },
+      );
+    },
   );
 
   prisma.session.create.mockImplementation(
