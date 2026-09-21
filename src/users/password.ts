@@ -27,3 +27,18 @@ export const PASSWORD_MIN_LENGTH = 8;
 export function hashPassword(plainText: string): Promise<string> {
   return argon2.hash(plainText, ARGON2_OPTIONS);
 }
+
+/**
+ * Confere a senha contra o hash. Hash malformado conta como senha errada, e
+ * nao como erro interno: o chamador so precisa saber que nao confere.
+ */
+export async function verifyPassword(
+  hash: string,
+  plainText: string,
+): Promise<boolean> {
+  try {
+    return await argon2.verify(hash, plainText);
+  } catch {
+    return false;
+  }
+}

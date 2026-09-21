@@ -44,6 +44,7 @@ describe('Prefixo global da API', () => {
 
   it('as rotas respondem sob /api', async () => {
     await request(app.getHttpServer()).get('/api/health').expect(200);
-    await request(app.getHttpServer()).get('/api/categories').expect(200);
+    // 401 e nao 404: a rota existe, so exige autenticacao (TCC-009).
+    await request(app.getHttpServer()).get('/api/categories').expect(401);
   });
 });

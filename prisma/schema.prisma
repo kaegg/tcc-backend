@@ -84,8 +84,40 @@ model User {
   /// e so carregam dado quando a consulta pedir `include` explicitamente.
   transactions  Transaction[]
   conversations Conversation[]
+  sessions      Session[]
 
   @@map("users")
+}
+
+/// Sessao autenticada (TCC-009).
+///
+/// O access token e um JWT curto e sem estado proprio; o que da a uma sessao a
+/// capacidade de ser encerrada e esta linha. Cada requisicao autenticada confere
+/// que a sessao do token continua ativa, entao o logout vale de imediato, e nao
+/// so quando o JWT expirar.
+///
+/// O refresh token nunca e gravado: so o SHA-256 dele. SHA-256 basta aqui, ao
+/// contrario da senha, porque o token tem 384 bits aleatorios e nao ha o que
+/// adivinhar por forca bruta. Vazamento do banco nao entrega credencial usavel.
+model Session {
+  id String @id @default(uuid(7)) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  refreshTokenHash String @unique @map("refresh_token_hash") @db.Char(64)
+
+  /// Hash do refresh token anterior a ultima rotacao. Apresentar um token que
+  /// ja foi trocado indica copia do cookie: a sessao inteira e revogada.
+  previousRefreshTokenHash String? @unique @map("previous_refresh_token_hash") @db.Char(64)
+  rotatedAt DateTime? @map("rotated_at") @db.Timestamptz(3)
+
+  /// Vencimento absoluto: a sessao nao se renova para alem dele.
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
 }
 
 /// Categoria financeira do sistema, compartilhada por todos os usuarios

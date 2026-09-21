@@ -17,7 +17,14 @@ import { PrismaService } from './../src/prisma/prisma.service';
 export type PrismaStub = {
   $queryRaw: jest.Mock;
   category: { findMany: jest.Mock };
-  user: { create: jest.Mock };
+  user: { create: jest.Mock; findUnique: jest.Mock };
+  session: {
+    create: jest.Mock;
+    findUnique: jest.Mock;
+    updateMany: jest.Mock;
+    update: jest.Mock;
+    count: jest.Mock;
+  };
   onModuleInit: jest.Mock;
   onModuleDestroy: jest.Mock;
 };
@@ -26,11 +33,24 @@ export function createPrismaStub(): PrismaStub {
   return {
     $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
     category: { findMany: jest.fn().mockResolvedValue([]) },
-    user: { create: jest.fn() },
+    user: { create: jest.fn(), findUnique: jest.fn() },
+    session: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      updateMany: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
+    },
     onModuleInit: jest.fn().mockResolvedValue(undefined),
     onModuleDestroy: jest.fn().mockResolvedValue(undefined),
   };
 }
+
+/**
+ * Segredo so de teste: o CI nao tem `.env`, e sem segredo forte a aplicacao
+ * recusa subir (de proposito).
+ */
+process.env.JWT_SECRET ??= 'segredo-somente-para-testes-e2e-0123456789';
 
 /**
  * Monta a aplicacao do jeito que ela roda de verdade.

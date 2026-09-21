@@ -65,8 +65,10 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 | `PORT` | Porta HTTP do servidor (padrão `3000`) |
 | `CORS_ORIGIN` | Origem do frontend liberada no CORS (padrão `http://localhost:5173`) |
 | `DATABASE_URL` | String de conexão do PostgreSQL |
-| `JWT_SECRET` | Segredo de assinatura do token |
-| `JWT_EXPIRES_IN` | Validade do token (ex.: `1d`) |
+| `JWT_SECRET` | Segredo de assinatura do access token. **Mínimo de 32 caracteres**: com menos, a aplicação não sobe |
+| `ACCESS_TOKEN_TTL_MINUTES` | Opcional. Validade do access token (padrão `15`) |
+| `SESSION_TTL_DAYS` | Opcional. Vencimento absoluto da sessão (padrão `7`) |
+| `TRUST_PROXY_HOPS` | Opcional. Nº de proxies confiáveis à frente da API; necessário para o limite de tentativas ver o IP real |
 | `DATABASE_URL_TEST` | Opcional. Banco separado usado por `test/schema-constraints.e2e-spec.ts`; sem ela o spec é pulado |
 | `SEED_DEMO` | Opcional. Com `true`, o seed também cria usuário e lançamentos de demonstração |
 | `SEED_DEMO_PASSWORD` | Exigida quando `SEED_DEMO=true`. Não tem valor padrão de propósito |
@@ -120,7 +122,32 @@ avisando que nenhuma query vai funcionar.
 |---|---|---|---|
 | `GET` | `/api/health` | Disponibilidade da API e do PostgreSQL | TCC-006 |
 | `GET` | `/api/categories` | Categorias ativas do sistema; aceita `?type=receita\|despesa` | TCC-006 |
-| `POST` | `/api/users` | Cria conta com nome, e-mail e senha | TCC-008 |
+| `POST` | `/api/users` | Cria conta com nome, e-mail e senha (pública, 5 req/min por IP) | TCC-008 |
+| `POST` | `/api/auth/login` | Autentica; devolve access token e grava o refresh em cookie (pública) | TCC-009 |
+| `POST` | `/api/auth/refresh` | Restaura a sessão pelo cookie e rotaciona o refresh token (pública, exige `Origin` permitida) | TCC-009 |
+| `POST` | `/api/auth/logout` | Revoga a sessão e apaga o cookie (pública, idempotente) | TCC-009 |
+| `GET` | `/api/auth/me` | Usuário da sessão atual | TCC-009 |
+
+## Autenticação e controle de acesso
+
+Toda rota exige autenticação **por padrão** (guard global). Liberar uma rota é decisão explícita, com
+`@Public()`; hoje são só `health`, `POST /users` e as três rotas de `auth` acima.
+
+- **Access token:** JWT HS256 de 15 min (`sub` = usuário, `sid` = sessão), enviado em
+  `Authorization: Bearer`. Algoritmo e emissor são fixados na verificação.
+- **Sessão:** tabela `sessions`. A cada requisição o guard confere que a sessão do token não foi
+  revogada, então o logout vale **na hora**, sem esperar o JWT vencer.
+- **Refresh token:** 384 bits aleatórios, só em cookie `httpOnly`, `SameSite=Strict`, `Path=/api/auth`
+  (`Secure` com `NODE_ENV=production`). No banco fica apenas o SHA-256. Cada uso o troca por outro;
+  reapresentar um token antigo (fora de 10 s de tolerância para duas abas) revoga a sessão inteira.
+- **Credencial inválida:** mesma resposta e mesmo custo de CPU para e-mail sem conta e senha errada.
+- **Força bruta:** 10 tentativas/min por IP e 10 por conta a cada 15 min no login; 429 com
+  `Retry-After-*`.
+- **CSRF:** `SameSite=Strict` mais conferência do header `Origin` em `refresh` e `logout`.
+- **Dono do dado:** serviços recebem o `id` de `@CurrentUser()`, nunca de parâmetro ou corpo.
+
+Em produção, frontend e API precisam ser do **mesmo site** (mesmo domínio registrável), por causa do
+`SameSite=Strict`, e servidos por HTTPS.
 
 `GET /api/health` responde **200** quando tudo opera e **503** quando alguma dependência caiu, com o
 mesmo corpo nos dois casos:

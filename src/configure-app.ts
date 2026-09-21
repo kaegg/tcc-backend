@@ -39,6 +39,12 @@ export function configureApp(app: NestExpressApplication): void {
   const config = app.get(ConfigService);
   const logger = new Logger('CORS');
 
+  // Atras de proxy reverso, `req.ip` seria o do proxy e o limite de tentativas
+  // passaria a contar todos os usuarios juntos. Fica desligado por padrao:
+  // ligado sem proxy, o cliente forjaria o IP com `X-Forwarded-For`.
+  const trustProxy = config.get<string>('TRUST_PROXY_HOPS');
+  if (trustProxy) app.set('trust proxy', Number(trustProxy));
+
   // Headers de seguranca.
   // A CSP padrao do Helmet bloqueia os estilos e scripts inline do Swagger UI e
   // a pagina da documentacao abre em branco; por isso as diretivas abaixo

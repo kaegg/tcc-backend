@@ -5,6 +5,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { Public } from '../auth/public.decorator';
 import { HealthResponseDto } from './dto/health-response.dto';
 import { HealthService } from './health.service';
 
@@ -25,6 +26,7 @@ export class HealthController {
    * padrao da API: lancar `ServiceUnavailableException` converteria o corpo em
    * `ApiErrorBody` e perderia a informacao de QUAL dependencia falhou.
    */
+  @Public()
   @Get()
   @Header('Cache-Control', 'no-store')
   @ApiOkResponse({
