@@ -42,6 +42,20 @@ export class UsersService {
       throw error;
     }
   }
+
+  /** Único caminho que lê `passwordHash`; o resultado nunca sai da camada de autenticação. */
+  findCredentialsByEmail(email: string) {
+    return this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        passwordHash: true,
+      },
+    });
+  }
 }
 
 function isEmailAlreadyTaken(error: unknown): boolean {

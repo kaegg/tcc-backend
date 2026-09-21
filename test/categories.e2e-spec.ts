@@ -8,6 +8,7 @@ import {
   createTestApp,
   type PrismaStub,
 } from './create-test-app';
+import { authenticateFakeUser } from './fake-auth-store';
 
 const CATEGORIAS = [
   {
@@ -33,11 +34,13 @@ const texto = (body: ApiErrorBody): string =>
 describe('GET /api/categories (TCC-006)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaStub;
+  let authorization: string;
 
   beforeEach(async () => {
     prisma = createPrismaStub();
     prisma.category.findMany.mockResolvedValue(CATEGORIAS);
     app = await createTestApp(prisma);
+    authorization = await authenticateFakeUser(prisma, app);
   });
 
   afterEach(async () => {
@@ -47,13 +50,17 @@ describe('GET /api/categories (TCC-006)', () => {
   it('devolve a colecao dentro do envelope `data`', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/categories')
+      .set('Authorization', authorization)
       .expect(200);
 
     expect(lista(res)).toEqual({ data: CATEGORIAS });
   });
 
   it('consulta apenas categorias ativas', async () => {
-    await request(app.getHttpServer()).get('/api/categories').expect(200);
+    await request(app.getHttpServer())
+      .get('/api/categories')
+      .set('Authorization', authorization)
+      .expect(200);
 
     expect(prisma.category.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { isActive: true } }),
@@ -63,6 +70,7 @@ describe('GET /api/categories (TCC-006)', () => {
   it('soma o filtro de tipo ao escopo de ativas', async () => {
     await request(app.getHttpServer())
       .get('/api/categories?type=receita')
+      .set('Authorization', authorization)
       .expect(200);
 
     expect(prisma.category.findMany).toHaveBeenCalledWith(
@@ -72,7 +80,10 @@ describe('GET /api/categories (TCC-006)', () => {
 
   it('nao devolve isActive nem carimbos de tempo', async () => {
     // A garantia real esta no `select` do service: os campos nem saem do banco.
-    await request(app.getHttpServer()).get('/api/categories').expect(200);
+    await request(app.getHttpServer())
+      .get('/api/categories')
+      .set('Authorization', authorization)
+      .expect(200);
 
     expect(prisma.category.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -84,6 +95,7 @@ describe('GET /api/categories (TCC-006)', () => {
   it('rejeita tipo fora do dominio', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/categories?type=xpto')
+      .set('Authorization', authorization)
       .expect(400);
 
     expect(texto(erro(res))).toContain('receita ou despesa');
@@ -95,6 +107,7 @@ describe('GET /api/categories (TCC-006)', () => {
     // cliente nunca pode anexar cache-buster do tipo `?_=123`.
     const res = await request(app.getHttpServer())
       .get('/api/categories?tipo=receita')
+      .set('Authorization', authorization)
       .expect(400);
 
     expect(texto(erro(res))).toContain('tipo');
