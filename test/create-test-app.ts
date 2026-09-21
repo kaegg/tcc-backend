@@ -17,7 +17,8 @@ import { PrismaService } from './../src/prisma/prisma.service';
 export type PrismaStub = {
   $queryRaw: jest.Mock;
   $transaction: jest.Mock;
-  category: { findMany: jest.Mock };
+  category: { findMany: jest.Mock; count: jest.Mock };
+  transaction: { create: jest.Mock };
   user: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
   session: {
     create: jest.Mock;
@@ -34,7 +35,11 @@ export function createPrismaStub(): PrismaStub {
   return {
     $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
-    category: { findMany: jest.fn().mockResolvedValue([]) },
+    category: {
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(1),
+    },
+    transaction: { create: jest.fn() },
     user: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
     session: {
       create: jest.fn(),
