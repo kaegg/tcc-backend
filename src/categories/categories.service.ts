@@ -5,8 +5,9 @@ import { activeCategory } from '../prisma/scopes';
 import type { TransactionType } from '../generated/prisma/enums';
 import type { CategoryResponseDto } from './dto/category-response.dto';
 
+// Mesmo texto do formulario do frontend.
 export const CATEGORIA_INVALIDA =
-  'Categoria inválida para o tipo do lançamento.';
+  'A categoria precisa ser compatível com o tipo do lançamento.';
 
 /**
  * Ponto único de acesso às categorias para os demais módulos.
