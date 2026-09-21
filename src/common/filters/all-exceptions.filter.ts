@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { redactSecrets } from '../utils/redact';
+import type { FieldErrors } from '../validation-exception.factory';
 
 /** Formato unico de erro da API */
 export interface ApiErrorBody {
@@ -16,6 +17,8 @@ export interface ApiErrorBody {
   message: string | string[];
   path: string;
   timestamp: string;
+  /** Presente quando a falha pode ser atribuida a campos especificos. */
+  fieldErrors?: FieldErrors;
 }
 
 /**
@@ -65,9 +68,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         };
       }
 
-      const { message, error } = payload as {
+      const { message, error, fieldErrors } = payload as {
         message?: string | string[];
         error?: string;
+        fieldErrors?: FieldErrors;
       };
 
       return {
@@ -76,6 +80,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message: message ?? exception.message,
         path,
         timestamp,
+        ...(fieldErrors ? { fieldErrors } : {}),
       };
     }
 

@@ -8,9 +8,9 @@
  */
 
 import 'dotenv/config';
-import * as argon2 from 'argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
+import { hashPassword } from '../src/users/password';
 import {
   TransactionType,
   TransactionSource,
@@ -205,7 +205,7 @@ async function seedDemoData(categoryIds: Map<string, string>): Promise<void> {
     create: {
       name: process.env.SEED_DEMO_NAME ?? 'Usuário de demonstração',
       email,
-      passwordHash: await argon2.hash(password),
+      passwordHash: await hashPassword(password),
     },
   });
 

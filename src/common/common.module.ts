@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter';
+import { validationExceptionFactory } from './validation-exception.factory';
 
 /**
  * Padroes transversais da API REST.
@@ -22,6 +23,7 @@ import { AllExceptionsFilter } from './filters/all-exceptions.filter';
         whitelist: true,
         forbidNonWhitelisted: true,
         transform: true,
+        exceptionFactory: validationExceptionFactory,
       }),
     },
   ],

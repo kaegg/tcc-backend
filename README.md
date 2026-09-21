@@ -120,6 +120,7 @@ avisando que nenhuma query vai funcionar.
 |---|---|---|---|
 | `GET` | `/api/health` | Disponibilidade da API e do PostgreSQL | TCC-006 |
 | `GET` | `/api/categories` | Categorias ativas do sistema; aceita `?type=receita\|despesa` | TCC-006 |
+| `POST` | `/api/users` | Cria conta com nome, e-mail e senha | TCC-008 |
 
 `GET /api/health` responde **200** quando tudo opera e **503** quando alguma dependência caiu, com o
 mesmo corpo nos dois casos:
@@ -293,7 +294,7 @@ src/
   prisma/                # PrismaModule, PrismaService e scopes.ts (filtros RN07/RN09)
   health/                # TCC-006 - disponibilidade da API e do banco
   auth/                  # TCC-009  - login, logout, sessão
-  users/                 # TCC-008, TCC-010 - cadastro e perfil
+  users/                 # TCC-008, TCC-010 - cadastro e perfil (password.ts: Argon2id)
   transactions/          # TCC-012 a TCC-015 - lançamentos
   categories/            # TCC-011 - categorias financeiras
   reports/               # TCC-016, TCC-017 - relatórios
@@ -307,6 +308,7 @@ test/
   health.e2e-spec.ts             # 200/503, timeout da sonda e não vazamento
   categories.e2e-spec.ts         # envelope, filtro de tipo e rejeição de query
   body-limit.e2e-spec.ts         # 413 e 400 do body-parser
+  users.e2e-spec.ts              # cadastro: validação, duplicidade e hash da senha
   error-handling.e2e-spec.ts     # prova o formato de erro e o não vazamento
   schema-constraints.e2e-spec.ts # prova as restrições do esquema no banco real
 ```
