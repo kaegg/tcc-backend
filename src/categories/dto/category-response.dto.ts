@@ -6,7 +6,7 @@ import { TransactionType } from '../../generated/prisma/enums';
  *
  * `isActive` e os carimbos de tempo nao saem: toda categoria devolvida por
  * `GET /api/categories` esta ativa por construcao. O campo entra na TCC-011,
- * no endpoint administrativo que precisar dele.
+ * se um dia houver endpoint administrativo que precise dele; hoje nao ha.
  */
 export class CategoryResponseDto {
   @ApiProperty({

@@ -1,5 +1,11 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { CategoriesService } from './categories.service';
 import { CategoryListResponseDto } from './dto/category-response.dto';
 import { ListCategoriesQueryDto } from './dto/list-categories-query.dto';
@@ -12,11 +18,16 @@ export class CategoriesController {
   /**
    * Lista as categorias ativas do sistema.
    *
-   * Somente leitura nesta etapa: criar, editar e desativar categoria e escopo
-   * da TCC-011.
+   * Somente leitura, de proposito: nao existe perfil administrativo, entao
+   * qualquer rota de escrita seria acessivel a todo usuario autenticado e
+   * alteraria o que todos veem. As categorias entram pelo seed e saem de
+   * circulacao por `is_active`, nunca por exclusao.
    */
   @Get()
+  @ApiBearerAuth()
   @ApiOkResponse({ type: CategoryListResponseDto })
+  @ApiBadRequestResponse({ description: 'Filtro `type` invalido.' })
+  @ApiUnauthorizedResponse({ description: 'Sessao invalida ou expirada.' })
   async list(
     @Query() query: ListCategoriesQueryDto,
   ): Promise<CategoryListResponseDto> {

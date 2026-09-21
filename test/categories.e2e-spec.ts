@@ -92,6 +92,25 @@ describe('GET /api/categories (TCC-006)', () => {
     );
   });
 
+  it('sem autenticacao responde 401 e nao consulta o banco', async () => {
+    await request(app.getHttpServer()).get('/api/categories').expect(401);
+
+    expect(prisma.category.findMany).not.toHaveBeenCalled();
+  });
+
+  it('so expoe id, nome e tipo, mesmo que a consulta traga mais', async () => {
+    prisma.category.findMany.mockResolvedValue([
+      { ...CATEGORIAS[0], isActive: true, createdAt: new Date() },
+    ]);
+
+    const res = await request(app.getHttpServer())
+      .get('/api/categories')
+      .set('Authorization', authorization)
+      .expect(200);
+
+    expect(lista(res).data[0]).toEqual(CATEGORIAS[0]);
+  });
+
   it('rejeita tipo fora do dominio', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/categories?type=xpto')
