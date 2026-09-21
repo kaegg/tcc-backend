@@ -127,6 +127,8 @@ avisando que nenhuma query vai funcionar.
 | `POST` | `/api/auth/refresh` | Restaura a sessão pelo cookie e rotaciona o refresh token (pública, exige `Origin` permitida) | TCC-009 |
 | `POST` | `/api/auth/logout` | Revoga a sessão e apaga o cookie (pública, idempotente) | TCC-009 |
 | `GET` | `/api/auth/me` | Usuário da sessão atual | TCC-009 |
+| `PATCH` | `/api/users/me` | Altera nome e/ou e-mail; trocar o e-mail exige `currentPassword` (10 req/min por IP) | TCC-010 |
+| `PUT` | `/api/users/me/password` | Troca a senha (`currentPassword` + `newPassword`), encerra as outras sessões; 204 (5 req/min por IP) | TCC-010 |
 
 ## Autenticação e controle de acesso
 
@@ -144,6 +146,9 @@ Toda rota exige autenticação **por padrão** (guard global). Liberar uma rota 
 - **Força bruta:** 10 tentativas/min por IP e 10 por conta a cada 15 min no login; 429 com
   `Retry-After-*`.
 - **CSRF:** `SameSite=Strict` mais conferência do header `Origin` em `refresh` e `logout`.
+- **Perfil:** as rotas são `/users/me`, sem `:id` — o alvo é sempre o dono do token. Corpo com campo
+  fora do contrato (`id`, `passwordHash`...) é recusado. Senha atual errada responde 400 com
+  `fieldErrors.currentPassword`, e não 401, que o cliente interpretaria como sessão expirada.
 - **Dono do dado:** serviços recebem o `id` de `@CurrentUser()`, nunca de parâmetro ou corpo.
 
 Em produção, frontend e API precisam ser do **mesmo site** (mesmo domínio registrável), por causa do
