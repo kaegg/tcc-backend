@@ -71,11 +71,16 @@ export class TransactionsController {
     return this.transactions.create(user.id, dto);
   }
 
-  /** Só os lançamentos do usuário autenticado; o dono nunca vem da requisição. */
+  /**
+   * Só os lançamentos do usuário autenticado; o dono nunca vem da requisição.
+   * Filtros por período, tipo, categoria e descrição se combinam (TCC-015).
+   */
   @Get()
   @Header('Cache-Control', 'no-store')
   @ApiOkResponse({ type: TransactionListResponseDto })
-  @ApiBadRequestResponse({ description: 'Paginacao invalida.' })
+  @ApiBadRequestResponse({
+    description: 'Paginacao ou filtro invalido. O corpo traz `fieldErrors`.',
+  })
   @ApiUnauthorizedResponse({ description: 'Sessao invalida ou expirada.' })
   list(
     @CurrentUser() user: AuthenticatedUser,

@@ -16,6 +16,7 @@ import type {
   TransactionResponseDto,
 } from './dto/transaction-response.dto';
 import { civilDateToUtc, utcToCivilDate } from './dto/transaction-rules';
+import { transactionFilters } from './transaction-filters';
 
 export const LANCAMENTO_NAO_ENCONTRADO = 'Lançamento não encontrado.';
 export const NADA_A_ALTERAR = 'Informe ao menos um campo para alterar.';
@@ -77,15 +78,19 @@ export class TransactionsService {
   /**
    * Lançamentos do usuário, do mais recente ao mais antigo.
    *
-   * `ownedActiveTransaction` é o único `where`: dono vindo do token e
-   * exclusão lógica (RN07, RN09). Leitura e contagem rodam na mesma
-   * transação para que `total` e `data` descrevam o mesmo instante.
+   * Os filtros (TCC-015) entram antes de `ownedActiveTransaction`, que vem
+   * por último no objeto: nenhuma chave de filtro sobrescreve o dono vindo do
+   * token nem a exclusão lógica (RN07, RN09). Leitura e contagem rodam na
+   * mesma transação para que `total` e `data` descrevam o mesmo instante.
    */
   async list(
     userId: string,
     query: ListTransactionsQueryDto,
   ): Promise<TransactionListResponseDto> {
-    const where = ownedActiveTransaction(userId);
+    const where = {
+      ...transactionFilters(query),
+      ...ownedActiveTransaction(userId),
+    };
 
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.transaction.findMany({

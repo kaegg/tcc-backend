@@ -130,7 +130,7 @@ avisando que nenhuma query vai funcionar.
 | `PATCH` | `/api/users/me` | Altera nome e/ou e-mail; trocar o e-mail exige `currentPassword` (10 req/min por IP) | TCC-010 |
 | `PUT` | `/api/users/me/password` | Troca a senha (`currentPassword` + `newPassword`), encerra as outras sessões; 204 (5 req/min por IP) | TCC-010 |
 | `POST` | `/api/transactions` | Cria receita ou despesa do usuário do token | TCC-012 |
-| `GET` | `/api/transactions` | Lançamentos ativos do usuário, paginados (`?page`, `?pageSize` até 100) | TCC-013 |
+| `GET` | `/api/transactions` | Lançamentos ativos do usuário, paginados (`?page`, `?pageSize` até 100) e filtráveis por `?from`, `?to` (datas inclusivas), `?type`, `?categoryId` e `?search` (descrição, sem diferenciar maiúsculas); os filtros se combinam | TCC-013, TCC-015 |
 | `GET` | `/api/transactions/:id` | Detalhe de um lançamento | TCC-013 |
 | `PATCH` | `/api/transactions/:id` | Altera um ou mais campos, com as mesmas validações do cadastro | TCC-014 |
 | `DELETE` | `/api/transactions/:id` | Exclusão lógica (`deleted_at`); 204 | TCC-014 |
