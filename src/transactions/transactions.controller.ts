@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   HttpCode,
@@ -8,6 +9,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -15,6 +17,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
@@ -26,6 +29,7 @@ import {
 } from '../auth/current-user.decorator';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { ListTransactionsQueryDto } from './dto/list-transactions-query.dto';
+import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import {
   TransactionListResponseDto,
   TransactionResponseDto,
@@ -93,5 +97,42 @@ export class TransactionsController {
     @Param('id', uuidOr404()) id: string,
   ): Promise<TransactionResponseDto> {
     return this.transactions.findOne(user.id, id);
+  }
+
+  @Patch(':id')
+  @Header('Cache-Control', 'no-store')
+  @ApiOkResponse({ type: TransactionResponseDto })
+  @ApiBadRequestResponse({
+    description:
+      'Corpo vazio, campos invalidos ou categoria incompativel com o tipo ' +
+      'resultante. O corpo traz `fieldErrors`.',
+  })
+  @ApiNotFoundResponse({
+    description:
+      'Nao existe, foi excluido ou pertence a outro usuario (sem distincao).',
+  })
+  @ApiUnauthorizedResponse({ description: 'Sessao invalida ou expirada.' })
+  update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', uuidOr404()) id: string,
+    @Body() dto: UpdateTransactionDto,
+  ): Promise<TransactionResponseDto> {
+    return this.transactions.update(user.id, id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Header('Cache-Control', 'no-store')
+  @ApiNoContentResponse({ description: 'Lancamento excluido.' })
+  @ApiNotFoundResponse({
+    description:
+      'Nao existe, ja foi excluido ou pertence a outro usuario (sem distincao).',
+  })
+  @ApiUnauthorizedResponse({ description: 'Sessao invalida ou expirada.' })
+  remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', uuidOr404()) id: string,
+  ): Promise<void> {
+    return this.transactions.remove(user.id, id);
   }
 }

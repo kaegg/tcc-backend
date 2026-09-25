@@ -41,7 +41,7 @@ describe('checkAmount', () => {
 });
 
 describe('checkCivilDate', () => {
-  it.each(['2026-09-21', '2024-02-29', '1900-01-01', '2100-12-31'])(
+  it.each(['2026-09-21', '2024-02-29', '2000-01-01', '2100-01-01'])(
     'aceita %s',
     (value) => {
       expect(checkCivilDate(value)).toBeNull();
@@ -58,8 +58,9 @@ describe('checkCivilDate', () => {
     '2026-9-21',
     '2026-09-21T00:00:00Z',
     '21/09/2026',
-    '1899-12-31',
-    '2101-01-01',
+    '1999-12-31',
+    '2100-01-02',
+    '1900-01-01',
   ])('recusa %s', (value) => {
     expect(checkCivilDate(value)).toBe(DATE_MESSAGES.invalid);
   });
