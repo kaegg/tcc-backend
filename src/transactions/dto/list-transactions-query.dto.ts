@@ -30,7 +30,7 @@ export const PERIODO_INVERTIDO =
   'A data final deve ser igual ou posterior à inicial.';
 
 @ValidatorConstraint({ name: 'periodOrder' })
-class PeriodOrderConstraint implements ValidatorConstraintInterface {
+export class PeriodOrderConstraint implements ValidatorConstraintInterface {
   validate(to: unknown, args: ValidationArguments): boolean {
     const { from } = args.object as { from?: unknown };
 
