@@ -10,6 +10,8 @@ import {
   type AuthenticatedUser,
   CurrentUser,
 } from '../auth/current-user.decorator';
+import { MonthlySummaryQueryDto } from './dto/monthly-summary-query.dto';
+import { MonthlySummaryResponseDto } from './dto/monthly-summary-response.dto';
 import { PeriodSummaryResponseDto } from './dto/period-summary-response.dto';
 import { ReportPeriodQueryDto } from './dto/report-period-query.dto';
 import { ReportsService } from './reports.service';
@@ -34,5 +36,20 @@ export class ReportsController {
     @Query() period: ReportPeriodQueryDto,
   ): Promise<PeriodSummaryResponseDto> {
     return this.reports.periodSummary(user.id, period);
+  }
+
+  @Get('monthly')
+  @Header('Cache-Control', 'no-store')
+  @ApiOkResponse({ type: MonthlySummaryResponseDto })
+  @ApiBadRequestResponse({
+    description:
+      'Mes ausente ou fora do formato AAAA-MM. O corpo traz `fieldErrors`.',
+  })
+  @ApiUnauthorizedResponse({ description: 'Sessao invalida ou expirada.' })
+  monthly(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: MonthlySummaryQueryDto,
+  ): Promise<MonthlySummaryResponseDto> {
+    return this.reports.monthlySummary(user.id, query.month);
   }
 }
