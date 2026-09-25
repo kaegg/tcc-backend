@@ -15,7 +15,7 @@ import {
 import { TransactionType } from '../../generated/prisma/enums';
 import { checkAmount, checkCivilDate } from './transaction-rules';
 
-const trim = ({ value }: { value: unknown }): unknown =>
+export const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
 /**
@@ -23,7 +23,7 @@ const trim = ({ value }: { value: unknown }): unknown =>
  * gravação no PostgreSQL com erro interno, e os demais só servem para forjar
  * o que aparece nas listagens.
  */
-const NO_CONTROL_CHARS = new RegExp(
+export const NO_CONTROL_CHARS = new RegExp(
   // eslint-disable-next-line no-control-regex -- os caracteres de controle sao o alvo
   '^[^\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]*$',
 );
@@ -40,7 +40,7 @@ class AmountConstraint implements ValidatorConstraintInterface {
 }
 
 @ValidatorConstraint({ name: 'transactionDate' })
-class DateConstraint implements ValidatorConstraintInterface {
+export class DateConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
     return checkCivilDate(value) === null;
   }
