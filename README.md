@@ -134,6 +134,7 @@ avisando que nenhuma query vai funcionar.
 | `GET` | `/api/transactions/:id` | Detalhe de um lançamento | TCC-013 |
 | `PATCH` | `/api/transactions/:id` | Altera um ou mais campos, com as mesmas validações do cadastro | TCC-014 |
 | `DELETE` | `/api/transactions/:id` | Exclusão lógica (`deleted_at`); 204 | TCC-014 |
+| `GET` | `/api/reports/summary` | Receitas, despesas, saldo e quantidade de lançamentos ativos do usuário entre `?from` e `?to` (obrigatórios, inclusivos) | TCC-016 |
 
 Nas rotas com `:id`, lançamento inexistente, excluído, de outro usuário ou com id malformado responde o
 mesmo **404** — a resposta não confirma que o id existe na conta de alguém.
