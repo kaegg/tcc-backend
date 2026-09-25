@@ -43,8 +43,12 @@ export function checkAmount(value: unknown): string | null {
   return null;
 }
 
-const MIN_YEAR = 1900;
-const MAX_YEAR = 2100;
+/**
+ * Mesma faixa do CHECK `transactions_date_in_range` da migração inicial. Fora
+ * dela a data passaria aqui e o banco recusaria com erro 500.
+ */
+const MIN_DATE = '2000-01-01';
+const MAX_DATE = '2100-01-01';
 
 /**
  * Data civil `AAAA-MM-DD` que existe no calendário. `new Date('2026-02-30')`
@@ -64,7 +68,6 @@ export function checkCivilDate(value: unknown): string | null {
     Number(match[2]),
     Number(match[3]),
   ];
-  if (year < MIN_YEAR || year > MAX_YEAR) return DATE_MESSAGES.invalid;
 
   const parsed = new Date(Date.UTC(year, month - 1, day));
   const exists =
@@ -72,7 +75,11 @@ export function checkCivilDate(value: unknown): string | null {
     parsed.getUTCMonth() === month - 1 &&
     parsed.getUTCDate() === day;
 
-  return exists ? null : DATE_MESSAGES.invalid;
+  if (!exists || value < MIN_DATE || value > MAX_DATE) {
+    return DATE_MESSAGES.invalid;
+  }
+
+  return null;
 }
 
 /** Instante `00:00:00Z` da data civil: a coluna é `date`, sem hora nem fuso. */

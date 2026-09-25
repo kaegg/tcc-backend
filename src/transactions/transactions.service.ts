@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CategoriesService } from '../categories/categories.service';
 import type { Prisma } from '../generated/prisma/client';
 import type { TransactionSource } from '../generated/prisma/enums';
@@ -6,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ownedActiveTransaction } from '../prisma/scopes';
 import type { CreateTransactionDto } from './dto/create-transaction.dto';
 import type { ListTransactionsQueryDto } from './dto/list-transactions-query.dto';
+import type { UpdateTransactionDto } from './dto/update-transaction.dto';
 import type {
   TransactionListResponseDto,
   TransactionResponseDto,
@@ -13,6 +18,7 @@ import type {
 import { civilDateToUtc, utcToCivilDate } from './dto/transaction-rules';
 
 export const LANCAMENTO_NAO_ENCONTRADO = 'Lançamento não encontrado.';
+export const NADA_A_ALTERAR = 'Informe ao menos um campo para alterar.';
 
 const WITH_CATEGORY_NAME = { category: { select: { name: true } } } as const;
 
@@ -114,6 +120,75 @@ export class TransactionsService {
     if (!row) throw new NotFoundException(LANCAMENTO_NAO_ENCONTRADO);
 
     return toResponse(row);
+  }
+
+  /**
+   * Altera um lançamento do usuário (RF08). Formulário e chatbot passam por
+   * aqui, e o `source` original é preservado: ele registra como o lançamento
+   * foi criado, não quem o editou por último.
+   *
+   * O corpo é parcial, mas a regra de categoria vale para o resultado da
+   * fusão: trocar só o tipo, mantendo a categoria antiga, é recusado como
+   * no cadastro.
+   *
+   * A posse é conferida de novo no próprio `UPDATE`: se o lançamento for
+   * excluído entre a leitura e a escrita, nada é gravado e a resposta é 404.
+   */
+  async update(
+    userId: string,
+    id: string,
+    dto: UpdateTransactionDto,
+  ): Promise<TransactionResponseDto> {
+    if (Object.values(dto).every((value) => value === undefined)) {
+      throw new BadRequestException(NADA_A_ALTERAR);
+    }
+
+    const current = await this.findRow(userId, id);
+    if (!current) throw new NotFoundException(LANCAMENTO_NAO_ENCONTRADO);
+
+    const type = dto.type ?? current.type;
+    const categoryId = dto.categoryId ?? current.categoryId;
+    await this.categories.assertUsable(categoryId, type);
+
+    const where = { id, ...ownedActiveTransaction(userId) };
+    const [{ count }, row] = await this.prisma.$transaction([
+      this.prisma.transaction.updateMany({
+        where,
+        data: {
+          type,
+          categoryId,
+          ...(dto.amount !== undefined && { amount: dto.amount }),
+          ...(dto.date !== undefined && { date: civilDateToUtc(dto.date) }),
+          ...(dto.description !== undefined && {
+            description: dto.description,
+          }),
+        },
+      }),
+      this.prisma.transaction.findFirst({ where, include: WITH_CATEGORY_NAME }),
+    ]);
+
+    if (count === 0 || !row) {
+      throw new NotFoundException(LANCAMENTO_NAO_ENCONTRADO);
+    }
+
+    return toResponse(row);
+  }
+
+  /**
+   * Exclusão lógica (RF09, RN09): a linha fica, com `deletedAt` preenchido, e
+   * some de toda leitura que usa `ownedActiveTransaction` — listagem, detalhe
+   * e relatórios. A confirmação explícita (RN05) é da interface; aqui chega só
+   * a operação já confirmada.
+   *
+   * Excluir de novo responde 404, como qualquer id que não é do usuário.
+   */
+  async remove(userId: string, id: string): Promise<void> {
+    const { count } = await this.prisma.transaction.updateMany({
+      where: { id, ...ownedActiveTransaction(userId) },
+      data: { deletedAt: new Date() },
+    });
+
+    if (count === 0) throw new NotFoundException(LANCAMENTO_NAO_ENCONTRADO);
   }
 
   private findRow(userId: string, id: string) {
