@@ -18,7 +18,12 @@ export type PrismaStub = {
   $queryRaw: jest.Mock;
   $transaction: jest.Mock;
   category: { findMany: jest.Mock; count: jest.Mock };
-  transaction: { create: jest.Mock };
+  transaction: {
+    create: jest.Mock;
+    findMany: jest.Mock;
+    findFirst: jest.Mock;
+    count: jest.Mock;
+  };
   user: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
   session: {
     create: jest.Mock;
@@ -39,7 +44,12 @@ export function createPrismaStub(): PrismaStub {
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(1),
     },
-    transaction: { create: jest.fn() },
+    transaction: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      count: jest.fn(),
+    },
     user: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
     session: {
       create: jest.fn(),
