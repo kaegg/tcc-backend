@@ -32,3 +32,41 @@ export function monthToPeriod(month: string): { from: string; to: string } {
     to: `${month}-${String(lastDay).padStart(2, '0')}`,
   };
 }
+
+/**
+ * Meses que o período toca, cada um recortado pelas pontas do período: de
+ * 15/08 a 10/10 vira agosto (15 a 31), setembro inteiro e outubro (1 a 10).
+ */
+export function monthsInPeriod(period: {
+  from: string;
+  to: string;
+}): { month: string; from: string; to: string }[] {
+  const months: { month: string; from: string; to: string }[] = [];
+  let month = period.from.slice(0, 7);
+  const last = period.to.slice(0, 7);
+
+  while (month <= last) {
+    const bounds = monthToPeriod(month);
+    months.push({
+      month,
+      from: bounds.from < period.from ? period.from : bounds.from,
+      to: bounds.to > period.to ? period.to : bounds.to,
+    });
+
+    const [year, monthNumber] = month.split('-').map(Number);
+    month =
+      monthNumber === 12
+        ? `${year + 1}-01`
+        : `${year}-${String(monthNumber + 1).padStart(2, '0')}`;
+  }
+
+  return months;
+}
+
+/** Quantos meses de calendário o período toca, contando os das pontas. */
+export function monthSpan(from: string, to: string): number {
+  const [fy, fm] = from.split('-').map(Number);
+  const [ty, tm] = to.split('-').map(Number);
+
+  return (ty - fy) * 12 + (tm - fm) + 1;
+}

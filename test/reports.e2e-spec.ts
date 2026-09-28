@@ -128,6 +128,8 @@ describe('GET /api/reports/summary (TCC-016)', () => {
         income: '1750.10',
         expense: '1236.20',
         balance: '513.90',
+        // 513.90 / 1750.10 = 0,293640… → 29,36%
+        savingsRate: '29.36',
         transactionCount: 6,
       });
     });
@@ -143,6 +145,26 @@ describe('GET /api/reports/summary (TCC-016)', () => {
       // Em number, 0.1 + 0.2 = 0.30000000000000004.
       expect(resumo(res).expense).toBe('0.30');
       expect(resumo(res).balance).toBe('-0.30');
+    });
+
+    it('taxa de economia negativa quando as despesas passam as receitas', async () => {
+      linhas.push(
+        linha('receita', '100.00', '2026-09-01'),
+        linha('despesa', '150.55', '2026-09-02'),
+      );
+
+      const res = await get(SETEMBRO).expect(200);
+
+      // −50.55 / 100.00 = −50,55%
+      expect(resumo(res).savingsRate).toBe('-50.55');
+    });
+
+    it('sem receita não há taxa de economia', async () => {
+      linhas.push(linha('despesa', '10.00', '2026-09-01'));
+
+      const res = await get(SETEMBRO).expect(200);
+
+      expect(resumo(res).savingsRate).toBeNull();
     });
 
     it('saldo negativo sai com sinal', async () => {

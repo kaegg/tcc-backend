@@ -136,6 +136,7 @@ avisando que nenhuma query vai funcionar.
 | `DELETE` | `/api/transactions/:id` | Exclusão lógica (`deleted_at`); 204 | TCC-014 |
 | `GET` | `/api/reports/summary` | Receitas, despesas, saldo e quantidade de lançamentos ativos do usuário entre `?from` e `?to` (obrigatórios, inclusivos) | TCC-016 |
 | `GET` | `/api/reports/monthly` | Resumo do mês `?month=AAAA-MM`: totais, saldo e distribuição de receitas e despesas por categoria (total, quantidade e percentual) | TCC-017 |
+| `GET` | `/api/reports/overview` | Tudo o que a tela de relatórios mostra para `?from&to` (até 24 meses): totais, taxa de economia, distribuição por categoria e série mês a mês, de uma só consulta | TCC-018 |
 
 Nas rotas com `:id`, lançamento inexistente, excluído, de outro usuário ou com id malformado responde o
 mesmo **404** — a resposta não confirma que o id existe na conta de alguém.
@@ -339,7 +340,7 @@ src/
   users/                 # TCC-008, TCC-010 - cadastro e perfil (password.ts: Argon2id)
   transactions/          # TCC-012 a TCC-015 - lançamentos
   categories/            # TCC-011 - categorias financeiras
-  reports/               # TCC-016, TCC-017 - relatórios
+  reports/               # TCC-016 a TCC-018 - relatórios
   chat/                  # TCC-021, TCC-022 - chatbot (gateway Socket.IO)
   app.module.ts
   configure-app.ts       # Helmet, CORS, prefixo /api e parsers (usado por main e pelos e2e)
