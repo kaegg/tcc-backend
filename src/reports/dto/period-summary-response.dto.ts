@@ -26,6 +26,16 @@ export class PeriodSummaryResponseDto {
   })
   balance!: string;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: '29.43',
+    description:
+      'Taxa de economia: saldo sobre receitas, em percentual com duas casas. ' +
+      'Pode ser negativa; nula quando não há receita no período.',
+  })
+  savingsRate!: string | null;
+
   @ApiProperty({ description: 'Lançamentos considerados no período.' })
   transactionCount!: number;
 }

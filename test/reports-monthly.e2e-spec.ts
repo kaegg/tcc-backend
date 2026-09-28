@@ -186,6 +186,8 @@ describe('GET /api/reports/monthly (TCC-017)', () => {
         income: '3500.00',
         expense: '1440.50',
         balance: '2059.50',
+        // 2059.50 / 3500.00 = 58,842857… → 58,84%
+        savingsRate: '58.84',
         transactionCount: 10,
       });
     });
@@ -318,6 +320,7 @@ describe('GET /api/reports/monthly (TCC-017)', () => {
         income: '0.00',
         expense: '0.00',
         balance: '0.00',
+        savingsRate: null,
         transactionCount: 0,
         incomeByCategory: [],
         expenseByCategory: [],

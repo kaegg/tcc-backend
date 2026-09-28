@@ -1,4 +1,10 @@
-import { checkMonth, MONTH_MESSAGES, monthToPeriod } from './report-month';
+import {
+  checkMonth,
+  MONTH_MESSAGES,
+  monthSpan,
+  monthsInPeriod,
+  monthToPeriod,
+} from './report-month';
 
 describe('checkMonth', () => {
   it.each(['2026-09', '2000-01', '2100-01', '2026-12'])('aceita %s', (m) => {
@@ -33,5 +39,40 @@ describe('monthToPeriod', () => {
     ['2100-01', '2100-01-01', '2100-01-31'],
   ])('%s vai de %s a %s', (month, from, to) => {
     expect(monthToPeriod(month)).toEqual({ from, to });
+  });
+});
+
+describe('monthsInPeriod', () => {
+  it('recorta o primeiro e o último mês pelas pontas do período', () => {
+    expect(monthsInPeriod({ from: '2026-08-15', to: '2026-10-10' })).toEqual([
+      { month: '2026-08', from: '2026-08-15', to: '2026-08-31' },
+      { month: '2026-09', from: '2026-09-01', to: '2026-09-30' },
+      { month: '2026-10', from: '2026-10-01', to: '2026-10-10' },
+    ]);
+  });
+
+  it('atravessa a virada do ano', () => {
+    expect(
+      monthsInPeriod({ from: '2025-12-01', to: '2026-01-31' }).map(
+        (m) => m.month,
+      ),
+    ).toEqual(['2025-12', '2026-01']);
+  });
+
+  it('um dia só é um mês só', () => {
+    expect(monthsInPeriod({ from: '2026-09-10', to: '2026-09-10' })).toEqual([
+      { month: '2026-09', from: '2026-09-10', to: '2026-09-10' },
+    ]);
+  });
+});
+
+describe('monthSpan', () => {
+  it.each([
+    ['2026-09-01', '2026-09-30', 1],
+    ['2026-09-30', '2026-10-01', 2],
+    ['2025-01-01', '2026-12-31', 24],
+    ['2025-01-01', '2027-01-01', 25],
+  ])('%s a %s toca %i meses', (from, to, meses) => {
+    expect(monthSpan(from, to)).toBe(meses);
   });
 });
