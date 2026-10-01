@@ -26,8 +26,8 @@ export class TransactionResponseDto {
   @ApiProperty({ example: '2026-09-21', description: 'Data civil AAAA-MM-DD.' })
   date!: string;
 
-  @ApiProperty()
-  description!: string;
+  @ApiProperty({ type: String, nullable: true })
+  description!: string | null;
 
   @ApiProperty()
   categoryId!: string;

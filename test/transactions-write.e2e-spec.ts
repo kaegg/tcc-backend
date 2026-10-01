@@ -282,7 +282,7 @@ describe('Edição e exclusão de lançamentos (TCC-014)', () => {
         expect(prisma.transaction.updateMany).not.toHaveBeenCalled();
       });
 
-      it.each(['type', 'amount', 'categoryId', 'date', 'description'])(
+      it.each(['type', 'amount', 'categoryId', 'date'])(
         'recusa %s nulo em vez de apagar o campo',
         async (campo) => {
           const item = linha();
@@ -292,6 +292,19 @@ describe('Edição e exclusão de lançamentos (TCC-014)', () => {
 
           expect(erro(res).fieldErrors).toHaveProperty(campo);
           expect(prisma.transaction.updateMany).not.toHaveBeenCalled();
+        },
+      );
+
+      it.each([null, '', '   '])(
+        'descrição %j apaga a descrição, que é opcional',
+        async (description) => {
+          const item = linha();
+          linhas.push(item);
+
+          const res = await editar(item.id, { description }).expect(200);
+
+          expect(item.description).toBeNull();
+          expect((res.body as TransactionResponseDto).description).toBeNull();
         },
       );
 

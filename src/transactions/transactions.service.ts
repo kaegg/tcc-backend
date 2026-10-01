@@ -66,7 +66,7 @@ export class TransactionsService {
         type: dto.type,
         amount: dto.amount,
         date: civilDateToUtc(dto.date),
-        description: dto.description,
+        description: dto.description ?? null,
         source,
       },
       include: WITH_CATEGORY_NAME,

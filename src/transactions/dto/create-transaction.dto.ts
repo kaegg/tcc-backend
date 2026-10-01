@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsEnum,
+  IsOptional,
   IsString,
   IsUUID,
   Matches,
@@ -17,6 +18,13 @@ import { checkAmount, checkCivilDate } from './transaction-rules';
 
 export const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
+
+/** Texto em branco é ausência de descrição, e não uma descrição de espaços. */
+const blankToNull = ({ value }: { value: unknown }): unknown => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+};
 
 /**
  * Caracteres de controle, exceto tabulação e quebra de linha. NUL derruba a
@@ -82,8 +90,20 @@ export class CreateTransactionDto {
   @Validate(DateConstraint)
   date!: string;
 
-  @ApiProperty({ minLength: 3, maxLength: 140 })
-  @Transform(trim)
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: String,
+    minLength: 3,
+    maxLength: 140,
+    description:
+      'Opcional. Ausente, nula ou em branco é gravada como nula; quando ' +
+      'informada, tem de 3 a 140 caracteres.',
+  })
+  @Transform(blankToNull)
+  // Na edição, nulo apaga a descrição: o `IsOptional` pula a validação de
+  // nulo, e por isso este campo aceita o que os outros recusam.
+  @IsOptional()
   @IsString({ message: 'Descreva o lançamento com pelo menos 3 caracteres.' })
   @Matches(NO_CONTROL_CHARS, {
     message: 'A descrição contém caracteres inválidos.',
@@ -92,5 +112,5 @@ export class CreateTransactionDto {
   @MinLength(3, {
     message: 'Descreva o lançamento com pelo menos 3 caracteres.',
   })
-  description!: string;
+  description?: string | null;
 }

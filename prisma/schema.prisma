@@ -156,7 +156,8 @@ model Transaction {
   /// que e o instante do registro. Separar os dois evita que um lancamento
   /// feito as 23h50 do dia 31 caia no mes seguinte do relatorio.
   date DateTime @db.Date
-  description String            @db.VarChar(255)
+  /// Opcional. Quando existe, nunca é texto só com espaços (CHECK na migração inicial).
+  description String?           @db.VarChar(255)
   source      TransactionSource @default(formulario)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)

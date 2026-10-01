@@ -244,6 +244,37 @@ describe('POST /api/transactions (TCC-012)', () => {
       expect(prisma.transaction.create).not.toHaveBeenCalled();
     });
 
+    it('a descrição é opcional: ausente é gravada como nula', async () => {
+      const { description, ...semDescricao } = VALIDO;
+      void description;
+      prisma.transaction.create.mockResolvedValue({
+        ...LINHA,
+        description: null,
+      });
+
+      const res = await enviar(semDescricao).expect(201);
+
+      expect(gravado().description).toBeNull();
+      expect((res.body as TransactionResponseDto).description).toBeNull();
+    });
+
+    it.each([null, '', '    '])(
+      'descrição %j é gravada como nula',
+      async (description) => {
+        await enviar({ ...VALIDO, description }).expect(201);
+
+        expect(gravado().description).toBeNull();
+      },
+    );
+
+    it('descrição preenchida continua exigindo pelo menos 3 caracteres', async () => {
+      const res = await enviar({ ...VALIDO, description: ' ab ' }).expect(400);
+
+      expect(erro(res).fieldErrors?.description).toContain(
+        'Descreva o lançamento com pelo menos 3 caracteres.',
+      );
+    });
+
     it('aceita quebra de linha na descrição', async () => {
       await enviar({ ...VALIDO, description: 'Mercado\nfeira' }).expect(201);
     });

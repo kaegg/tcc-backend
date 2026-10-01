@@ -128,6 +128,14 @@ describeWithDatabase('Restricoes de integridade do esquema', () => {
       ).rejects.toThrow();
     });
 
+    it('aceita descricao nula, que e opcional', async () => {
+      const row = await prisma.transaction.create({
+        data: { ...validTransaction(), description: null },
+      });
+
+      expect(row.description).toBeNull();
+    });
+
     // Data valida em JS, mas fora da faixa do CHECK: quem recusa e o banco.
     it.each([['1800-01-01'], ['2200-01-01']])(
       'recusa data fora da faixa plausivel (%s)',
