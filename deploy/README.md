@@ -9,80 +9,89 @@ O servidor não precisa do código-fonte nem de Node: só de Docker, do `docker-
 | `postgres` | `postgres:17-bookworm` | Banco, com volume persistente |
 | `migrate` | `ghcr.io/kaegg/tcc-backend-migrate` | Aplica migrações e o seed das categorias, e encerra |
 | `backend` | `ghcr.io/kaegg/tcc-backend` | API NestJS, só na rede interna |
-| `web` | `ghcr.io/kaegg/tcc-frontend` | Caddy: serve o frontend, encaminha `/api` e cuida do HTTPS |
+| `web` | `ghcr.io/kaegg/tcc-frontend` | Caddy: serve o frontend e encaminha `/api` ao backend |
 | `ollama` | `ollama/ollama` | Profile `llm`, desligado até a TCC-020 |
 
-## Fluxo de atualização
+O sistema atende em `http://localhost:8080` **do servidor**, sem porta aberta para a rede. O acesso é por túnel SSH
+enquanto o sistema estabiliza e, depois, por um túnel da Cloudflare, que entrega o HTTPS.
 
-```
-push na main ─► CI (lint, testes, build) ─► publica a imagem ─► se DEPLOY_ENABLED=true, deploy via SSH
-```
+## Primeira subida
 
-- Push na `main` do **backend** atualiza só `migrate` e `backend` (e envia o compose e o `deploy.sh` atualizados).
-- Push na `main` do **frontend** atualiza só o `web`.
-- Branches `main#TCC-xxx` só passam pelas verificações.
-- Se a migração falhar, a API anterior continua no ar e o job falha no GitHub.
-
-## Primeira subida no servidor
-
-1. Instalar o Docker Engine com o plugin Compose (`docker compose version` precisa responder).
-2. Criar a pasta da aplicação e baixar para ela os arquivos desta pasta (não precisa clonar):
+1. Conferir o Docker (se algum falhar, pedir a instalação a quem administra o servidor):
 
    ```bash
-   sudo mkdir -p /opt/intellifinance && sudo chown "$USER" /opt/intellifinance && cd /opt/intellifinance
+   docker --version && docker compose version && docker ps
    ```
+
+   `permission denied` no `docker ps` significa que o usuário não está no grupo `docker`.
+2. Baixar os arquivos para a pasta da aplicação (não precisa clonar):
 
    ```bash
    for f in docker-compose.yml deploy.sh .env.example; do curl -fsSLO "https://raw.githubusercontent.com/kaegg/tcc-backend/main/deploy/$f"; done
    ```
-3. `cp .env.example .env` e preencher. As instruções de cada variável estão no próprio arquivo.
-4. Subir:
+3. `cp .env.example .env`, gerar os segredos com `openssl rand -hex 24` e `openssl rand -hex 48` e preencher.
+4. Subir e conferir:
 
    ```bash
    sh deploy.sh backend && sh deploy.sh web
    ```
 
-As imagens são públicas, então não precisa de `docker login`.
+   ```bash
+   docker compose ps && curl -s http://localhost:8080/api/health
+   ```
 
-## Ligar o deploy automático
-
-Configurar **nos dois repositórios** (Settings → Secrets and variables → Actions). Conta pessoal no GitHub não tem
-segredo compartilhado entre repositórios, então os valores são cadastrados duas vezes.
-
-| Tipo | Nome | Valor |
-|---|---|---|
-| Secret | `DEPLOY_SSH_KEY` | Chave privada de um par criado só para o deploy |
-| Secret | `DEPLOY_KNOWN_HOSTS` | Saída de `ssh-keyscan -p <porta> <host>`, conferida com a impressão digital do servidor |
-| Variable | `DEPLOY_HOST` | IP ou domínio do servidor |
-| Variable | `DEPLOY_USER` | Usuário do servidor, membro do grupo `docker` |
-| Variable | `DEPLOY_PATH` | `/opt/intellifinance` |
-| Variable | `DEPLOY_SSH_PORT` | Opcional; padrão 22 |
-| Variable | `DEPLOY_ENABLED` | `true` liga o deploy; qualquer outro valor pausa |
-
-Par de chaves do deploy, gerado na sua máquina:
+## Acessar da sua máquina (túnel SSH)
 
 ```bash
-ssh-keygen -t ed25519 -N "" -C deploy-intellifinance -f deploy_intellifinance
+ssh -N -L 8080:localhost:8080 usuario@servidor
 ```
 
-A chave pública (`.pub`) vai para `~/.ssh/authorized_keys` do usuário no servidor; a privada vai para o secret
-`DEPLOY_SSH_KEY` dos dois repositórios e depois pode ser apagada da sua máquina.
+Com o comando aberto, `http://localhost:8080` no seu navegador é o sistema do servidor. Precisa ser `localhost` e a
+mesma porta do `PUBLIC_URL`: o cookie de sessão só é aceito em HTTPS ou em `localhost`.
 
-**Durante o estudo de usabilidade**, troque `DEPLOY_ENABLED` para `false` nos dois repositórios. As imagens continuam
-sendo publicadas, mas nada muda no servidor até religar.
+## Túnel da Cloudflare
 
-Se o GitHub não alcançar o servidor por SSH (servidor atrás de VPN ou firewall da universidade), o job `deploy` muda
-para um runner auto-hospedado no próprio servidor; publicação e `deploy.sh` continuam iguais.
+O serviço do túnel aponta para `http://localhost:8080`. Depois de criado, acrescentar o endereço público ao `.env`
+e recriar API e frontend:
+
+```
+PUBLIC_URL=http://localhost:8080,https://intellifinance.exemplo.com.br
+```
+
+```bash
+docker compose up -d backend web
+```
+
+O Caddy confia no `X-Forwarded-For` vindo de endereço privado (o `cloudflared` local), então a API enxerga o IP real
+de cada participante. Sem isso, todos teriam o mesmo IP e o limite de cadastro por IP (5 por minuto) bloquearia o
+estudo.
+
+## Atualizar
+
+```bash
+sh deploy.sh backend
+```
+
+```bash
+sh deploy.sh web
+```
+
+Cada um atualiza só o seu lado. Se a migração falhar, a API anterior continua no ar.
+
+O job `deploy` do CI entra por SSH e fica desligado enquanto `DEPLOY_ENABLED` não for `true`. Atrás de túnel o
+GitHub não alcança o servidor; a atualização automática nesse caso precisa ser puxada pelo próprio servidor.
 
 ## Operação
-
-```bash
-docker compose ps
-```
 
 ```bash
 docker compose logs -f backend
 ```
 
+Backup do banco (ali ficam os dados do estudo):
+
+```bash
+docker compose exec -T postgres pg_dump -U intellifinance intellifinance | gzip > "backup-$(date +%F).sql.gz"
+```
+
 Voltar uma versão: fixar `BACKEND_TAG` ou `FRONTEND_TAG` no `.env` com a tag `sha-<hash>` do commit desejado e rodar
-`sh deploy.sh backend` (ou `web`). Remover a linha volta a seguir a `latest`.
+o `deploy.sh` do lado correspondente. Remover a linha volta a seguir a `latest`.

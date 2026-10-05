@@ -2,7 +2,7 @@ name: intellifinance
 
 # Ambiente de produção. As imagens são publicadas pelo CI de cada repositório a cada push na main; o
 # servidor não compila nada. Primeira subida e deploy automático: ver README.md desta pasta.
-# Só o `web` publica porta; banco e API ficam acessíveis apenas pela rede interna.
+# Só o `web` publica porta, e só em 127.0.0.1; banco e API ficam apenas na rede interna.
 
 services:
   postgres:
@@ -46,8 +46,9 @@ services:
       # O OriginGuard compara o header Origin com esta lista também em requisição de mesma origem,
       # então ela precisa ser exatamente o endereço que aparece no navegador.
       CORS_ORIGIN: ${PUBLIC_URL:?defina PUBLIC_URL no .env}
-      # Um salto: o Caddy. Se houver outro proxy na frente do servidor, aumente.
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      # Caddy e o proxy local à frente dele (cloudflared ou docker-proxy). Seguro também sem
+      # túnel: o Caddy sobrescreve o X-Forwarded-For de quem não é proxy confiável.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
       TZ: America/Sao_Paulo
     depends_on:
       migrate:
@@ -57,14 +58,12 @@ services:
     image: ghcr.io/kaegg/tcc-frontend:${FRONTEND_TAG:-latest}
     restart: unless-stopped
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:?defina SITE_ADDRESS no .env}
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
-      - "${HTTPS_PORT:-443}:443/udp"
+      # Só a própria máquina alcança: o acesso é por túnel SSH e, depois, pelo da Cloudflare.
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8080}:80"
     volumes:
-      # Certificados emitidos; sem volume, cada recriação pediria um novo e esbarraria no limite
-      # de emissões do Let's Encrypt.
+      # Estado do Caddy; guarda os certificados se um dia ele servir HTTPS direto.
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
