@@ -9,6 +9,10 @@ import type { CategoryResponseDto } from './dto/category-response.dto';
 export const CATEGORIA_INVALIDA =
   'A categoria precisa ser compatível com o tipo do lançamento.';
 
+// Opcao de quando nenhuma outra serve: fica no fim de cada tipo, e nao no meio
+// da ordem alfabetica, onde pareceria so mais uma categoria.
+const CATCH_ALL_CATEGORY = 'Outros';
+
 /**
  * Ponto único de acesso às categorias para os demais módulos.
  *
@@ -41,8 +45,17 @@ export class CategoriesService {
       orderBy: [{ type: 'asc' }, { name: 'asc' }],
     });
 
+    const typeOrder = [...new Set(rows.map((row) => row.type))];
+    const isCatchAll = (name: string) => Number(name === CATCH_ALL_CATEGORY);
+
     // Campo a campo: a saida nao depende de a consulta ter restringido o `select`.
-    return rows.map(({ id, name, type }) => ({ id, name, type }));
+    return rows
+      .map(({ id, name, type }) => ({ id, name, type }))
+      .sort(
+        (a, b) =>
+          typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type) ||
+          isCatchAll(a.name) - isCatchAll(b.name),
+      );
   }
 
   /**

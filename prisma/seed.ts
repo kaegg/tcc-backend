@@ -30,9 +30,12 @@ const SYSTEM_CATEGORIES: { name: string; type: TransactionType }[] = [
   { name: 'Educação', type: 'despesa' },
   { name: 'Lazer', type: 'despesa' },
   { name: 'Assinaturas', type: 'despesa' },
+  { name: 'Investimentos', type: 'despesa' },
+  { name: 'Outros', type: 'despesa' },
   { name: 'Salário', type: 'receita' },
   { name: 'Freelance', type: 'receita' },
   { name: 'Investimentos', type: 'receita' },
+  { name: 'Outros', type: 'receita' },
 ];
 
 /**

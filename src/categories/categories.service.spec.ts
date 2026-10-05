@@ -53,3 +53,31 @@ describe('CategoriesService.assertUsable', () => {
     expect(prisma.category.count).not.toHaveBeenCalled();
   });
 });
+
+describe('CategoriesService.findAll', () => {
+  it('poe "Outros" no fim de cada tipo, mantendo a ordem do banco', async () => {
+    const rows = [
+      { id: '1', name: 'Freelance', type: 'receita' },
+      { id: '2', name: 'Outros', type: 'receita' },
+      { id: '3', name: 'Salário', type: 'receita' },
+      { id: '4', name: 'Alimentação', type: 'despesa' },
+      { id: '5', name: 'Outros', type: 'despesa' },
+      { id: '6', name: 'Transporte', type: 'despesa' },
+    ];
+    const prisma = {
+      category: { findMany: jest.fn().mockResolvedValue(rows) },
+    };
+    const service = new CategoriesService(prisma as unknown as PrismaService);
+
+    const nomes = (await service.findAll()).map((c) => `${c.type}:${c.name}`);
+
+    expect(nomes).toEqual([
+      'receita:Freelance',
+      'receita:Salário',
+      'receita:Outros',
+      'despesa:Alimentação',
+      'despesa:Transporte',
+      'despesa:Outros',
+    ]);
+  });
+});
