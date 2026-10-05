@@ -26,13 +26,15 @@ push na main ─► CI (lint, testes, build) ─► publica a imagem ─► se D
 ## Primeira subida no servidor
 
 1. Instalar o Docker Engine com o plugin Compose (`docker compose version` precisa responder).
-2. Criar a pasta da aplicação e copiar para ela os arquivos desta pasta:
+2. Criar a pasta da aplicação e baixar para ela os arquivos desta pasta (não precisa clonar):
 
    ```bash
-   sudo mkdir -p /opt/intellifinance && sudo chown "$USER" /opt/intellifinance
+   sudo mkdir -p /opt/intellifinance && sudo chown "$USER" /opt/intellifinance && cd /opt/intellifinance
    ```
 
-   Copiar `docker-compose.yml`, `deploy.sh` e `.env.example` (com `scp` ou colando o conteúdo).
+   ```bash
+   for f in docker-compose.yml deploy.sh .env.example; do curl -fsSLO "https://raw.githubusercontent.com/kaegg/tcc-backend/main/deploy/$f"; done
+   ```
 3. `cp .env.example .env` e preencher. As instruções de cada variável estão no próprio arquivo.
 4. Subir:
 
