@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+src/generated
+.git
+.github
+.vscode
+.idea
+*.log
+
+# Segredos ficam fora da imagem; o compose injeta as variáveis no container.
+.env
+.env.*
+!.env.example

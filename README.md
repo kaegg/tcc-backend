@@ -95,6 +95,11 @@ npm run start:dev
 Se o banco ainda não estiver configurado, a aplicação sobe assim mesmo e registra um erro no log
 avisando que nenhuma query vai funcionar.
 
+## Produção
+
+Docker Compose com imagens publicadas pelo CI a cada push na `main` deste repositório e do frontend. O compose da
+aplicação inteira, o script de deploy e o passo a passo do servidor ficam em [`deploy/`](deploy/README.md).
+
 ## Comandos
 
 | Comando | O que faz |
