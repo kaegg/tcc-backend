@@ -15,8 +15,14 @@ case "${1:-}" in
     docker compose pull web
     docker compose up -d --no-deps --wait web
     ;;
+  ollama)
+    docker compose pull ollama
+    docker compose up -d --no-deps --wait ollama
+    # Só baixa o que mudou; com o modelo já no volume, termina em segundos.
+    docker compose exec -T ollama sh -c 'ollama pull "$OLLAMA_MODEL"'
+    ;;
   *)
-    echo "uso: $0 backend|web" >&2
+    echo "uso: $0 backend|web|ollama" >&2
     exit 2
     ;;
 esac

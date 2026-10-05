@@ -10,7 +10,7 @@ O servidor não precisa do código-fonte nem de Node: só de Docker, do `docker-
 | `migrate` | `ghcr.io/kaegg/tcc-backend-migrate` | Aplica migrações e o seed das categorias, e encerra |
 | `backend` | `ghcr.io/kaegg/tcc-backend` | API NestJS, só na rede interna |
 | `web` | `ghcr.io/kaegg/tcc-frontend` | Caddy: serve o frontend e encaminha `/api` ao backend |
-| `ollama` | `ollama/ollama` | Profile `llm`, desligado até a TCC-020 |
+| `ollama` | `ollama/ollama` | LLM local do chatbot, só na rede interna |
 
 O sistema atende em `http://localhost:8080` **do servidor**, sem porta aberta para a rede. O acesso é por túnel SSH
 enquanto o sistema estabiliza e, depois, por um túnel da Cloudflare, que entrega o HTTPS.
@@ -39,6 +39,38 @@ enquanto o sistema estabiliza e, depois, por um túnel da Cloudflare, que entreg
    ```bash
    docker compose ps && curl -s http://localhost:8080/api/health
    ```
+
+## Chatbot (Ollama)
+
+O primeiro `pull` do modelo baixa alguns GB (cerca de 4,7 GB para `qwen2.5:7b`):
+
+```bash
+sh deploy.sh ollama
+```
+
+Para comparar variantes sem trocar a configurada, baixar e rodar direto no container. O `--verbose`
+mostra carga e tokens/s, e o `ollama ps` informa se rodou em GPU ou CPU:
+
+```bash
+docker compose exec ollama ollama pull qwen2.5:3b
+```
+
+```bash
+docker compose exec ollama ollama run qwen2.5:3b --verbose "Gastei 45 reais no mercado ontem"
+```
+
+```bash
+docker compose exec ollama ollama ps
+```
+
+Variante que não for usar ocupa disco no volume; remover com `docker compose exec ollama ollama rm <variante>`.
+
+Sem GPU, o container usa a CPU. Para usar uma GPU NVIDIA, o servidor precisa do `nvidia-container-toolkit`
+(instalado pelo administrador) e de uma reserva de dispositivo no serviço `ollama` do compose.
+
+Se o Ollama também estiver instalado direto no servidor (`systemctl is-active ollama`), os dois não conflitam
+(o container não publica porta), mas cada um guarda os próprios modelos e disputa memória. Parar o do sistema:
+`sudo systemctl disable --now ollama`.
 
 ## Acessar da sua máquina (túnel SSH)
 

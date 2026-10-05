@@ -70,14 +70,26 @@ services:
       backend:
         condition: service_healthy
 
-  # Inferência local do chatbot (RNF06). Fora do `up` padrão até a TCC-020 ligar o backend a ele:
-  # `docker compose --profile llm up -d`.
+  # Inferência local do chatbot (RNF06). Sem porta publicada: só o backend o alcança, por
+  # http://ollama:11434. O Ollama não tem autenticação, então não deve ficar exposto.
+  # Sem `depends_on` no backend de propósito: Ollama fora do ar derruba só o chatbot, não o CRUD.
   ollama:
     image: ollama/ollama:0.35.1
-    profiles: ["llm"]
     restart: unless-stopped
+    environment:
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      # O padrão do Ollama descarrega o modelo após 5 min parado, e a recarga somaria segundos à
+      # primeira mensagem depois de cada pausa — distorcendo o tempo do chatbot no estudo.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
     volumes:
       - ollama_data:/root/.ollama
+    healthcheck:
+      # A imagem não traz curl; o próprio CLI consulta o servidor local.
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   postgres_data:
