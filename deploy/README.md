@@ -83,20 +83,27 @@ mesma porta do `PUBLIC_URL`: o cookie de sessão só é aceito em HTTPS ou em `l
 
 ## Túnel da Cloudflare
 
-O serviço do túnel aponta para `http://localhost:8080`. Depois de criado, acrescentar o endereço público ao `.env`
-e recriar API e frontend:
+O túnel e o nginx de entrada pertencem a outro compose do servidor (`servidor_web`), que atende várias aplicações e
+separa cada uma pelo domínio. O caminho de uma requisição é:
 
 ```
-PUBLIC_URL=http://localhost:8080,https://intellifinance.exemplo.com.br
+Cloudflare → cloudflared → nginx (servidor_web) → web (Caddy) → backend
 ```
 
-```bash
-docker compose up -d backend web
+O `web` deste compose entra na rede `EDGE_NETWORK` daquele, com o nome `intellifinance-app`, e o nginx encaminha
+`intellifinance.com.br` para `intellifinance-app:80`. No `.env`:
+
+```
+PUBLIC_URL=http://localhost:8080,https://intellifinance.com.br
+EDGE_NETWORK=servidor_web_intellifinance_backend
 ```
 
-O Caddy confia no `X-Forwarded-For` vindo de endereço privado (o `cloudflared` local), então a API enxerga o IP real
-de cada participante. Sem isso, todos teriam o mesmo IP e o limite de cadastro por IP (5 por minuto) bloquearia o
-estudo.
+A rede precisa existir antes do `up` deste compose; se o `servidor_web` for derrubado com `down`, subir ele de novo e
+depois recriar o `web` daqui (`docker compose up -d web`).
+
+São três proxies à frente da API (Caddy, nginx e `cloudflared`), cada um acrescentando um endereço ao
+`X-Forwarded-For`; por isso `TRUST_PROXY_HOPS=3`. Com menos, todos os participantes teriam o IP do `cloudflared` e o
+limite de cadastro por IP (5 por minuto) bloquearia o estudo.
 
 ## Atualizar
 

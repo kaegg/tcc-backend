@@ -46,9 +46,11 @@ services:
       # O OriginGuard compara o header Origin com esta lista também em requisição de mesma origem,
       # então ela precisa ser exatamente o endereço que aparece no navegador.
       CORS_ORIGIN: ${PUBLIC_URL:?defina PUBLIC_URL no .env}
-      # Caddy e o proxy local à frente dele (cloudflared ou docker-proxy). Seguro também sem
-      # túnel: o Caddy sobrescreve o X-Forwarded-For de quem não é proxy confiável.
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
+      # Caddy, nginx do servidor web e cloudflared: cada um acrescenta um endereço ao
+      # X-Forwarded-For. Valor menor faz todos os participantes parecerem ter o IP do cloudflared
+      # e o limite de cadastro por IP bloqueia o estudo. Seguro também pela porta local: o Caddy
+      # sobrescreve o X-Forwarded-For de quem não é proxy confiável.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-3}
       TZ: America/Sao_Paulo
     depends_on:
       migrate:
@@ -60,12 +62,20 @@ services:
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     ports:
-      # Só a própria máquina alcança: o acesso é por túnel SSH e, depois, pelo da Cloudflare.
+      # Só a própria máquina alcança, para o túnel SSH. O acesso público chega pela rede `edge`.
       - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8080}:80"
     volumes:
       # Estado do Caddy; guarda os certificados se um dia ele servir HTTPS direto.
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      # Declarar `networks` tira o serviço da rede padrão se ela não for listada, e sem ela o
+      # Caddy não alcança o backend.
+      default:
+      edge:
+        # O nginx do servidor web encaminha para este nome. Não pode ser `intellifinance`, que é
+        # o serviço provisório do compose do servidor web, na mesma rede.
+        aliases: [intellifinance-app]
     depends_on:
       backend:
         condition: service_healthy
@@ -90,6 +100,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+networks:
+  # Rede do compose do servidor web (nginx + cloudflared), criada por ele. Ela precisa existir
+  # antes do `up` deste compose; o nome real sai de `docker network ls`.
+  edge:
+    name: ${EDGE_NETWORK:?defina EDGE_NETWORK no .env}
+    external: true
 
 volumes:
   postgres_data:
