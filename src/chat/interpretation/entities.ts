@@ -78,13 +78,17 @@ export const ENTITY_FIELDS: Record<EntityName, EntityField> = {
     prompt: `resumo curto do lançamento, até ${DESCRIPTION_MAX} caracteres`,
     schema: () => nullable({ type: 'string', maxLength: DESCRIPTION_MAX }),
   },
+  // Mesmo motivo da data: "mês passado" calculado errado viraria um total
+  // errado dito com segurança. O período sai de `extraction/periods.ts`.
   periodStart: {
     prompt: 'início do período consultado, AAAA-MM-DD',
     schema: () => nullable({ type: 'string', format: 'date' }),
+    fromModel: false,
   },
   periodEnd: {
     prompt: 'fim do período consultado, AAAA-MM-DD',
     schema: () => nullable({ type: 'string', format: 'date' }),
+    fromModel: false,
   },
 };
 

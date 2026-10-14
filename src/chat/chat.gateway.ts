@@ -255,6 +255,7 @@ export class ChatGateway
         id: payload.id,
         pending: this.chat.pendingSummary(user.id, payload.conversationId),
         outcome: step.value.outcome ?? null,
+        report: step.value.report ?? null,
       });
     } catch (error) {
       let code: ChatErrorCode = 'erro_interno';

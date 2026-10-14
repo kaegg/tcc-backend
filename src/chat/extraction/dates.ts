@@ -11,7 +11,7 @@ export interface DateMention {
   date: string | null;
 }
 
-const MONTHS: Record<string, number> = {
+export const MONTHS: Record<string, number> = {
   janeiro: 1,
   fevereiro: 2,
   marco: 3,
@@ -25,7 +25,7 @@ const MONTHS: Record<string, number> = {
   novembro: 11,
   dezembro: 12,
 };
-const MONTH = `(${Object.keys(MONTHS).join('|')})`;
+export const MONTH = `(${Object.keys(MONTHS).join('|')})`;
 
 const WEEKDAYS: Record<string, number> = {
   domingo: 0,
@@ -59,7 +59,7 @@ function parseIso(value: string) {
   return { year, month, day };
 }
 
-function build(year: number, month: number, day: number): string | null {
+export function build(year: number, month: number, day: number): string | null {
   const date = new Date(Date.UTC(year, month - 1, day));
   if (
     date.getUTCFullYear() !== year ||
@@ -106,7 +106,7 @@ function dayOnly(reference: string, day: number) {
   return build(year, previous, day);
 }
 
-function smallNumber(text: string): number | null {
+export function smallNumber(text: string): number | null {
   if (/^\d+$/.test(text)) return Number(text);
   const read = readNumberWords(tokenize(text), 0);
   return read?.value ?? null;

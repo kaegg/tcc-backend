@@ -192,6 +192,57 @@ describe('Gateway do chat (TCC-022)', () => {
     });
   });
 
+  describe('consulta de relatórios (TCC-027)', () => {
+    it('responde com os totais do banco, só do usuário, e informa o período', async () => {
+      prisma.category.findMany.mockResolvedValue([
+        { id: CATEGORIA, name: 'Alimentação', type: 'despesa' },
+      ]);
+      prisma.transaction.groupBy.mockResolvedValue([
+        {
+          type: 'despesa',
+          categoryId: CATEGORIA,
+          date: new Date('2026-10-05T00:00:00.000Z'),
+          _sum: { amount: new Prisma.Decimal('45.9') },
+          _count: { _all: 2 },
+        },
+      ]);
+      ollama.chatStream.mockImplementation(function* () {
+        yield JSON.stringify({
+          intent: 'consultar_relatorio',
+          entities: {
+            type: 'despesa',
+            amount: null,
+            category: null,
+            description: null,
+          },
+          ambiguous: false,
+          reply: 'Você gastou R$ 1.000.000!',
+        });
+        return {};
+      });
+      const socket = await conectado();
+      const pedacos: string[] = [];
+      socket.on('reply:chunk', ({ text }: { text: string }) =>
+        pedacos.push(text),
+      );
+
+      const fim = esperar<{ report: unknown }>(socket, 'reply:end');
+      await enviar(socket, 'quanto gastei de 01/10/2026 a 31/10/2026?');
+
+      expect((await fim).report).toEqual({
+        from: '2026-10-01',
+        to: '2026-10-31',
+      });
+      expect(pedacos.join('')).toBe(
+        'Em outubro de 2026 (01/10/2026 a 31/10/2026), suas despesas somaram R$ 45,90, em 2 lançamentos. Todas em Alimentação.',
+      );
+      const [{ where }] = prisma.transaction.groupBy.mock.calls[0] as [
+        { where: Record<string, unknown> },
+      ];
+      expect(where).toMatchObject({ userId: USUARIO, deletedAt: null });
+    });
+  });
+
   describe('lançamento em andamento (TCC-025)', () => {
     const registro = (entidades: Record<string, unknown>) =>
       JSON.stringify({
@@ -397,6 +448,7 @@ describe('Gateway do chat (TCC-022)', () => {
           id: 'm2',
           pending: null,
           outcome: 'registrado',
+          report: null,
         });
         expect(prisma.transaction.create).toHaveBeenCalledTimes(1);
         expect(ollama.chatStream).toHaveBeenCalledTimes(1);
@@ -456,7 +508,12 @@ describe('Gateway do chat (TCC-022)', () => {
       const fim = esperar<{ id: string }>(socket, 'reply:end');
 
       expect(await enviar(socket, 'oi')).toEqual({ ok: true });
-      expect(await fim).toEqual({ id: 'm1', pending: null, outcome: null });
+      expect(await fim).toEqual({
+        id: 'm1',
+        pending: null,
+        outcome: null,
+        report: null,
+      });
       expect(pedacos).toEqual(['Olá', ', tudo bem?']);
     });
 

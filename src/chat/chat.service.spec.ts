@@ -5,6 +5,7 @@ import {
 } from '../categories/categories.service';
 import { LlmError } from '../llm/llm.errors';
 import type { ChatRequest, OllamaService } from '../llm/ollama.service';
+import type { ReportsService } from '../reports/reports.service';
 import type { TransactionsService } from '../transactions/transactions.service';
 import {
   CANCELLED_REPLY,
@@ -61,6 +62,7 @@ async function consumir(gerador: AsyncGenerator<string, Interpretation>) {
 describe('ChatService', () => {
   let chatStream: jest.Mock;
   let create: jest.Mock;
+  let overview: jest.Mock;
   let service: ChatService;
   let avisos: string[];
   const sinal = new AbortController().signal;
@@ -85,10 +87,12 @@ describe('ChatService', () => {
     create = jest.fn((userId: string, dto: { amount: string }) =>
       Promise.resolve({ id: 't1', userId, amount: dto.amount }),
     );
+    overview = jest.fn();
     service = new ChatService(
       { chatStream } as unknown as OllamaService,
       categories as unknown as CategoriesService,
       { create } as unknown as TransactionsService,
+      { overview } as unknown as ReportsService,
     );
     service.now = () => new Date('2026-10-13T15:00:00Z');
   });
@@ -591,6 +595,226 @@ describe('ChatService', () => {
     });
   });
 
+  describe('consulta de relatórios (TCC-027)', () => {
+    // `service.now` é 13/10/2026 (terça-feira) em São Paulo.
+    const categoria = (
+      categoryId: string,
+      categoryName: string,
+      total: string,
+      transactionCount: number,
+      share: string,
+    ) => ({ categoryId, categoryName, total, transactionCount, share });
+
+    const relatorio = (extra: Record<string, unknown> = {}) => ({
+      from: '2026-10-01',
+      to: '2026-10-31',
+      income: '3000.00',
+      expense: '350.00',
+      balance: '2650.00',
+      savingsRate: '88.33',
+      transactionCount: 4,
+      incomeByCategory: [categoria(SALARIO, 'Salário', '3000.00', 1, '100.00')],
+      expenseByCategory: [
+        categoria(ALIMENTACAO, 'Alimentação', '230.00', 2, '65.71'),
+        categoria(TRANSPORTE, 'Transporte', '120.00', 1, '34.29'),
+      ],
+      months: [],
+      ...extra,
+    });
+
+    const consulta = (
+      entidades: Record<string, unknown> = {},
+      intencao = 'consultar_relatorio',
+    ) => modeloResponde(saida(intencao, entidades, 'Você gastou R$ 9.999!'));
+
+    it('responde com os números do serviço de relatórios, nunca com os do modelo', async () => {
+      overview.mockResolvedValueOnce(relatorio());
+      consulta({ type: 'despesa' });
+
+      const { texto, resultado } = await enviar('quanto gastei este mês?');
+
+      expect(overview).toHaveBeenCalledWith('u1', {
+        from: '2026-10-01',
+        to: '2026-10-31',
+      });
+      expect(texto).not.toContain('9.999');
+      expect(texto).toBe(
+        'Em outubro de 2026 (01/10/2026 a 31/10/2026), suas despesas somaram R$ 350,00, em 3 lançamentos. Por categoria: Alimentação (R$ 230,00; 65,71%) e Transporte (R$ 120,00; 34,29%).',
+      );
+      expect(resultado.report).toEqual({
+        from: '2026-10-01',
+        to: '2026-10-31',
+      });
+    });
+
+    it('o período vem do texto, mesmo quando o modelo sugere outro', async () => {
+      overview.mockResolvedValueOnce(
+        relatorio({ from: '2026-09-01', to: '2026-09-30' }),
+      );
+      consulta({ type: 'despesa', periodStart: '2026-10-01' });
+
+      await enviar('quanto gastei no mês passado?');
+
+      expect(overview).toHaveBeenCalledWith('u1', {
+        from: '2026-09-01',
+        to: '2026-09-30',
+      });
+    });
+
+    it('sem período, pergunta; a resposta curta conclui sem chamar o modelo', async () => {
+      consulta({ type: 'despesa' });
+      const pergunta = await enviar('quanto gastei?');
+
+      expect(pergunta.texto).toMatch(/^De qual período\?/);
+      expect(pergunta.resultado.missingFields).toEqual([
+        'periodStart',
+        'periodEnd',
+      ]);
+      expect(overview).not.toHaveBeenCalled();
+
+      overview.mockResolvedValueOnce(
+        relatorio({ from: '2026-09-01', to: '2026-09-30' }),
+      );
+      const resposta = await enviar('mês passado');
+
+      expect(chatStream).toHaveBeenCalledTimes(1);
+      expect(overview).toHaveBeenCalledWith('u1', {
+        from: '2026-09-01',
+        to: '2026-09-30',
+      });
+      expect(resposta.texto).toMatch(
+        /^Em setembro de 2026 \(01\/09\/2026 a 30\/09\/2026\), suas despesas somaram/,
+      );
+    });
+
+    it('período impreciso ou com duas leituras gera pergunta, nunca escolha', async () => {
+      consulta({ type: 'despesa' });
+      const vago = await enviar('quanto gastei recentemente?');
+      expect(vago.texto).toMatch(/^Não consegui saber o período exato/);
+
+      consulta({ type: 'despesa' });
+      const dois = await enviar('quanto gastei em agosto e setembro?');
+      expect(dois.texto).toContain(
+        'agosto de 2026 (01/08/2026 a 31/08/2026) e setembro de 2026 (01/09/2026 a 30/09/2026)',
+      );
+
+      expect(overview).not.toHaveBeenCalled();
+    });
+
+    it('recusa período maior que o da tela de relatórios, com a mesma mensagem', async () => {
+      consulta();
+
+      const { texto } = await enviar('resumo de 01/01/2020 a 31/12/2026');
+
+      expect(texto).toContain('O período deve ter no máximo 24 meses.');
+      expect(overview).not.toHaveBeenCalled();
+    });
+
+    it('consulta por categoria', async () => {
+      overview.mockResolvedValueOnce(relatorio());
+      consulta({ category: 'Transporte' });
+
+      const { texto } = await enviar('quanto gastei com uber este mês?');
+
+      expect(texto).toBe(
+        'Em outubro de 2026 (01/10/2026 a 31/10/2026), você gastou R$ 120,00 em Transporte, em 1 lançamento — 34,29% das despesas do período.',
+      );
+    });
+
+    it('saldo e quanto sobrou das receitas', async () => {
+      overview.mockResolvedValueOnce(relatorio());
+      consulta();
+
+      const { texto } = await enviar('quanto economizei este mês?');
+
+      expect(texto).toBe(
+        'Em outubro de 2026 (01/10/2026 a 31/10/2026), suas receitas somaram R$ 3.000,00 e suas despesas, R$ 350,00. O saldo ficou positivo em R$ 2.650,00, o equivalente a 88,33% das receitas.',
+      );
+    });
+
+    it('saldo negativo', async () => {
+      overview.mockResolvedValueOnce(
+        relatorio({
+          income: '100.00',
+          balance: '-250.00',
+          savingsRate: '-250.00',
+        }),
+      );
+      consulta();
+
+      const { texto } = await enviar('qual meu saldo este mês?');
+
+      expect(texto).toContain(
+        'O saldo ficou negativo em R$ 250,00: as despesas superaram as receitas.',
+      );
+    });
+
+    it('resumo do mês', async () => {
+      overview.mockResolvedValueOnce(relatorio());
+      consulta({}, 'obter_resumo');
+
+      const { texto } = await enviar('me mostra o resumo do mês');
+
+      expect(texto).toBe(
+        'Em outubro de 2026 (01/10/2026 a 31/10/2026): receitas de R$ 3.000,00, despesas de R$ 350,00 e saldo de R$ 2.650,00, em 4 lançamentos. Maiores despesas: Alimentação (R$ 230,00; 65,71%) e Transporte (R$ 120,00; 34,29%).',
+      );
+    });
+
+    it('período sem lançamentos', async () => {
+      overview.mockResolvedValueOnce(
+        relatorio({
+          from: '2026-10-13',
+          to: '2026-10-13',
+          transactionCount: 0,
+          income: '0.00',
+          expense: '0.00',
+          balance: '0.00',
+          incomeByCategory: [],
+          expenseByCategory: [],
+        }),
+      );
+      consulta();
+
+      const { texto } = await enviar('resumo de hoje');
+
+      expect(texto).toBe('Hoje (13/10/2026), não há lançamentos registrados.');
+    });
+
+    it('consulta no meio de um lançamento: responde e lembra dele', async () => {
+      modeloResponde(
+        saida('registrar_lancamento', {
+          type: 'despesa',
+          category: 'Alimentação',
+        }),
+      );
+      await enviar('gastei no mercado');
+
+      overview.mockResolvedValueOnce(relatorio());
+      consulta({ type: 'despesa' });
+      const { texto } = await enviar('quanto gastei este mês?');
+
+      expect(texto).toContain('suas despesas somaram R$ 350,00');
+      expect(texto).toContain(
+        'Lembrete: o lançamento em andamento ainda precisa de valor',
+      );
+      expect(service.pendingSummary('u1', 'c1')?.missing).toEqual(['valor']);
+    });
+
+    it('outra intenção descarta a consulta que esperava o período', async () => {
+      consulta({ type: 'despesa' });
+      await enviar('quanto gastei?');
+
+      modeloResponde(saida('ajuda', {}, 'Oi!'));
+      await enviar('oi');
+
+      modeloResponde(saida('ajuda', {}, 'Não entendi.'));
+      await enviar('setembro');
+
+      expect(overview).not.toHaveBeenCalled();
+      expect(chatStream).toHaveBeenCalledTimes(3);
+    });
+  });
+
   describe('mudança de assunto', () => {
     it('responde a outra pergunta e lembra do lançamento em andamento', async () => {
       modeloResponde(
@@ -601,16 +825,10 @@ describe('ChatService', () => {
       );
       await enviar('gastei no mercado');
 
-      modeloResponde(
-        saida(
-          'consultar_relatorio',
-          { periodStart: '2026-10-01', periodEnd: '2026-10-31' },
-          'Vou consultar seus gastos de outubro.',
-        ),
-      );
-      const { texto } = await enviar('quanto gastei este mês?');
+      modeloResponde(saida('ajuda', {}, 'Posso registrar e consultar.'));
+      const { texto } = await enviar('o que você sabe fazer?');
 
-      expect(texto).toContain('Vou consultar seus gastos de outubro.');
+      expect(texto).toContain('Posso registrar e consultar.');
       expect(texto).toContain(
         'Lembrete: o lançamento em andamento ainda precisa de valor',
       );
