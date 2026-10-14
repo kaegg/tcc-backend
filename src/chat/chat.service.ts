@@ -1,14 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { CategoriesService } from '../categories/categories.service';
+import type { FieldErrors } from '../common/validation-exception.factory';
 import { LlmError } from '../llm/llm.errors';
 import {
   MAX_PROMPT_CHARS,
   OllamaService,
   type ChatMessage,
 } from '../llm/ollama.service';
+import type { TransactionResponseDto } from '../transactions/dto/transaction-response.dto';
+import { TransactionsService } from '../transactions/transactions.service';
+import type { ChatErrorCode } from './chat.protocol';
 import { ConversationMemory } from './conversation-memory';
 import {
   isCancelCommand,
+  isConfirmCommand,
   isShortAnswer,
   looksLikeQuestion,
 } from './extraction/commands';
@@ -21,6 +26,7 @@ import {
 } from './extraction/registration';
 import {
   FIELD_NAME,
+  composeRegisteredReply,
   composeRegistrationReply,
 } from './extraction/registration-reply';
 import { normalize } from './extraction/text';
@@ -43,17 +49,40 @@ import {
 import { JsonFieldStreamer } from './interpretation/json-field-streamer';
 import { referenceDate } from './interpretation/reference-date';
 import { PendingOperations, type PendingOperation } from './pending-operations';
+import { stateFromEdit, toProposal, type Proposal } from './proposal';
 
 export interface PendingSummary {
   /** Nomes dos campos que ainda faltam ou estão em dúvida, em português. */
   missing: string[];
   ready: boolean;
+  /** Presente quando o lançamento está completo e pode ser confirmado. */
+  proposal: Proposal | null;
 }
+
+export interface OperationFailure {
+  ok: false;
+  code: Extract<
+    ChatErrorCode,
+    | 'operacao_inexistente'
+    | 'operacao_alterada'
+    | 'operacao_incompleta'
+    | 'dados_invalidos'
+  >;
+  fieldErrors?: FieldErrors;
+}
+
+export type ConfirmResult =
+  | { ok: true; reply: string; transaction: TransactionResponseDto }
+  | OperationFailure;
+
+export type EditResult =
+  { ok: true; pending: PendingSummary } | OperationFailure;
 
 export const CANCELLED_REPLY =
   'Tudo bem, cancelei o lançamento em andamento. Nada foi registrado.';
 export const NOTHING_TO_CANCEL_REPLY =
   'Não há nenhum lançamento em andamento para cancelar.';
+export const EDITED_MESSAGE = 'Corrigi os dados do lançamento no cartão.';
 export const REPLACED_NOTICE =
   'O lançamento anterior, que ainda não tinha sido registrado, foi substituído por este.';
 
@@ -69,6 +98,7 @@ export class ChatService {
   constructor(
     private readonly llm: OllamaService,
     private readonly categories: CategoriesService,
+    private readonly transactions: TransactionsService,
   ) {}
 
   /**
@@ -93,7 +123,28 @@ export class ChatService {
       const reply = pending ? CANCELLED_REPLY : NOTHING_TO_CANCEL_REPLY;
       if (pending) this.pending.delete(userId, conversationId);
       const result = plainReply('cancelar', reply);
+      if (pending) result.outcome = 'cancelado';
       yield reply;
+      this.remember(userId, conversationId, content, result);
+      return result;
+    }
+
+    // "pode registrar" só confirma o que já está completo e na tela; sem isso,
+    // o texto segue como qualquer outra mensagem.
+    if (pending && isComplete(pending.state) && isConfirmCommand(normalized)) {
+      const committed = await this.commit(
+        userId,
+        conversationId,
+        pending,
+        context.referenceDate,
+      );
+      const result = committed.ok
+        ? {
+            ...plainReply('confirmar', committed.reply),
+            outcome: 'registrado' as const,
+          }
+        : plainReply('confirmar', commitFailureReply(committed));
+      yield result.reply;
       this.remember(userId, conversationId, content, result);
       return result;
     }
@@ -186,6 +237,78 @@ export class ChatService {
     return {
       missing: openFields(operation.state).map((field) => FIELD_NAME[field]),
       ready: isComplete(operation.state),
+      proposal: toProposal(operation),
+    };
+  }
+
+  /** Confirmação pelo botão do cartão, para a versão que o usuário vê. */
+  async confirmPending(
+    userId: string,
+    conversationId: string,
+    proposalId: string,
+  ): Promise<ConfirmResult> {
+    const operation = this.pending.get(userId, conversationId);
+    if (!operation) return { ok: false, code: 'operacao_inexistente' };
+    if (operation.id !== proposalId) {
+      return { ok: false, code: 'operacao_alterada' };
+    }
+
+    const result = await this.commit(
+      userId,
+      conversationId,
+      operation,
+      referenceDate(this.now()).date,
+    );
+    if (result.ok) {
+      this.remember(userId, conversationId, 'confirmar', {
+        ...plainReply('confirmar', result.reply),
+        outcome: 'registrado',
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Correção feita pelo usuário no próprio cartão. Substitui os dados do
+   * lançamento pendente, que continua aguardando confirmação: editar não grava.
+   */
+  async editPending(
+    userId: string,
+    conversationId: string,
+    proposalId: string,
+    values: Record<string, unknown>,
+  ): Promise<EditResult> {
+    const operation = this.pending.get(userId, conversationId);
+    if (!operation) return { ok: false, code: 'operacao_inexistente' };
+    if (operation.id !== proposalId) {
+      return { ok: false, code: 'operacao_alterada' };
+    }
+
+    const context = await this.buildContext();
+    const edited = stateFromEdit(values, context);
+    if ('fieldErrors' in edited) {
+      return {
+        ok: false,
+        code: 'dados_invalidos',
+        fieldErrors: edited.fieldErrors,
+      };
+    }
+    if (this.pending.get(userId, conversationId)?.id !== proposalId) {
+      return { ok: false, code: 'operacao_alterada' };
+    }
+
+    const result = this.register(
+      userId,
+      conversationId,
+      null,
+      edited.state,
+      context,
+      false,
+    );
+    this.remember(userId, conversationId, EDITED_MESSAGE, result);
+    return {
+      ok: true,
+      pending: this.pendingSummary(userId, conversationId) as PendingSummary,
     };
   }
 
@@ -200,6 +323,54 @@ export class ChatService {
       plainReply('cancelar', reply),
     );
     return reply;
+  }
+
+  /**
+   * Grava pelo mesmo serviço do formulário (RNF12), com o rascunho validado
+   * pelo mesmo DTO. O LLM nunca chega aqui: só o estado do servidor (RNF19).
+   *
+   * O pendente sai antes da gravação, para um segundo clique ou outra aba não
+   * gravarem o mesmo lançamento duas vezes. Se a gravação falha, ele volta.
+   */
+  private async commit(
+    userId: string,
+    conversationId: string,
+    operation: PendingOperation,
+    reference: string,
+  ): Promise<
+    | { ok: true; reply: string; transaction: TransactionResponseDto }
+    | OperationFailure
+  > {
+    const draft = buildTransactionDraft(operation.state);
+    if (!draft) return { ok: false, code: 'operacao_incompleta' };
+
+    this.pending.delete(userId, conversationId);
+    try {
+      const transaction = await this.transactions.create(
+        userId,
+        draft,
+        'assistente',
+      );
+      return {
+        ok: true,
+        reply: composeRegisteredReply(operation.state, reference),
+        transaction,
+      };
+    } catch (error) {
+      if (!this.pending.get(userId, conversationId)) {
+        this.pending.set(userId, conversationId, operation);
+      }
+      // Categoria desativada entre a proposta e a confirmação.
+      if (error instanceof BadRequestException) {
+        const body = error.getResponse() as { fieldErrors?: FieldErrors };
+        return {
+          ok: false,
+          code: 'dados_invalidos',
+          fieldErrors: body.fieldErrors ?? {},
+        };
+      }
+      throw error;
+    }
   }
 
   /**
@@ -342,6 +513,13 @@ function plainReply(intent: string, reply: string): Interpretation {
     reply,
     transactionDraft: null,
   };
+}
+
+function commitFailureReply(failure: OperationFailure): string {
+  const reason = Object.values(failure.fieldErrors ?? {}).flat()[0];
+  return reason
+    ? `Não consegui registrar: ${reason} Corrija pelo botão Editar do cartão ou diga “cancelar”.`
+    : 'Não consegui registrar o lançamento. Confira os dados e tente de novo.';
 }
 
 function openFields(state: RegistrationState): EntityName[] {

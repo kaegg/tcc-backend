@@ -48,9 +48,9 @@ export class TransactionsService {
   /**
    * Cria o lançamento do usuário informado.
    *
-   * Formulário e chatbot (TCC-022) passam por aqui (RNF12). `userId` e
-   * `source` são argumentos de quem chama, nunca campos do corpo: o
-   * controller entrega o id do token, e o chatbot informará 'assistente'.
+   * Formulário e chatbot passam por aqui (RNF12). `userId` e `source` são
+   * argumentos de quem chama, nunca campos do corpo: o controller entrega o
+   * id do token, e o chatbot informa 'assistente' ao confirmar (TCC-026).
    */
   async create(
     userId: string,

@@ -26,6 +26,8 @@ export interface Interpretation {
    * `null` enquanto faltar ou houver dúvida sobre algum dado.
    */
   transactionDraft: CreateTransactionDto | null;
+  /** O que a mensagem fez com o lançamento pendente, quando o encerrou. */
+  outcome?: 'registrado' | 'cancelado';
 }
 
 export interface ModelOutput {

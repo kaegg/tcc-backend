@@ -1,4 +1,9 @@
-import { isCancelCommand, isShortAnswer, looksLikeQuestion } from './commands';
+import {
+  isCancelCommand,
+  isConfirmCommand,
+  isShortAnswer,
+  looksLikeQuestion,
+} from './commands';
 import { normalize } from './text';
 import { detectTypeHint, readTypeAnswer } from './type-hint';
 
@@ -31,6 +36,36 @@ describe('isCancelCommand', () => {
     'nada de mais, foi 45',
   ])('não confunde com comando: "%s"', (texto) => {
     expect(isCancelCommand(n(texto))).toBe(false);
+  });
+});
+
+describe('isConfirmCommand', () => {
+  it.each([
+    'confirmo',
+    'Confirmar',
+    'pode registrar',
+    'Pode lançar!',
+    'sim',
+    'sim, pode registrar',
+    'ok, confirma',
+    'isso mesmo',
+    'está certo',
+    'registra por favor',
+    'pode salvar o lançamento',
+  ])('reconhece "%s"', (texto) => {
+    expect(isConfirmCommand(n(texto))).toBe(true);
+  });
+
+  it.each([
+    'registra 50 no mercado',
+    'registrar outra despesa',
+    'não registra',
+    'não',
+    'isso',
+    'sim, mas foi 60',
+    'pode ser no cartão',
+  ])('não confunde com confirmação: "%s"', (texto) => {
+    expect(isConfirmCommand(n(texto))).toBe(false);
   });
 });
 

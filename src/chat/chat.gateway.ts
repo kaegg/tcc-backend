@@ -20,12 +20,14 @@ import {
   chatError,
   parseCancel,
   parseCancelOperation,
+  parseConfirmOperation,
+  parseEditOperation,
   parseSendMessage,
   type ChatErrorCode,
   type SendMessageAck,
   type SendMessagePayload,
 } from './chat.protocol';
-import { ChatService } from './chat.service';
+import { ChatService, type OperationFailure } from './chat.service';
 import { RateLimiter } from './rate-limiter';
 
 const MESSAGES_PER_MINUTE = 12;
@@ -160,6 +162,77 @@ export class ChatGateway
     };
   }
 
+  /** Registra o lançamento proposto, na versão que o cartão mostra. */
+  @SubscribeMessage(ChatEvent.confirmOperation)
+  async onConfirmOperation(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() raw: unknown,
+  ) {
+    const payload = parseConfirmOperation(raw);
+    if (!payload) return reject('mensagem_invalida');
+
+    return this.exclusive(socket, async (user) => {
+      const result = await this.chat.confirmPending(
+        user.id,
+        payload.conversationId,
+        payload.proposalId,
+      );
+      if (!result.ok) return rejectOperation(result);
+      return { ok: true as const, reply: result.reply };
+    });
+  }
+
+  /** Correção feita no cartão; o lançamento continua aguardando confirmação. */
+  @SubscribeMessage(ChatEvent.editOperation)
+  async onEditOperation(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() raw: unknown,
+  ) {
+    const payload = parseEditOperation(raw);
+    if (!payload) return reject('mensagem_invalida');
+
+    return this.exclusive(socket, async (user) => {
+      const result = await this.chat.editPending(
+        user.id,
+        payload.conversationId,
+        payload.proposalId,
+        payload.values,
+      );
+      if (!result.ok) return rejectOperation(result);
+      return { ok: true as const, pending: result.pending };
+    });
+  }
+
+  /**
+   * Confirmar e editar ocupam a mesma vaga de uma mensagem: enquanto uma
+   * resposta pode alterar o lançamento, ele não é gravado nem editado.
+   */
+  private async exclusive<T>(
+    socket: Socket,
+    action: (user: SocketUser) => Promise<T>,
+  ): Promise<T | SendMessageAck> {
+    if (this.inFlight.has(socket.id)) return reject('ocupado');
+    const controller = new AbortController();
+    this.inFlight.set(socket.id, { id: '', controller });
+
+    try {
+      const user = userOf(socket);
+      if (!(await this.auth.isStillValid(user))) {
+        return reject('sessao_expirada');
+      }
+      return await action(user);
+    } catch (error) {
+      this.logger.error(
+        redactSecrets(`Falha no lançamento do chat: ${describeError(error)}`),
+      );
+      return reject('erro_interno');
+    } finally {
+      if (this.inFlight.get(socket.id)?.controller === controller) {
+        this.inFlight.delete(socket.id);
+      }
+    }
+  }
+
   private async stream(
     socket: Socket,
     user: SocketUser,
@@ -167,17 +240,21 @@ export class ChatGateway
     controller: AbortController,
   ): Promise<void> {
     try {
-      for await (const text of this.chat.streamReply(
+      const reply = this.chat.streamReply(
         user.id,
         payload.conversationId,
         payload.content,
         controller.signal,
-      )) {
-        socket.emit(ChatEvent.chunk, { id: payload.id, text });
+      );
+      let step = await reply.next();
+      while (!step.done) {
+        socket.emit(ChatEvent.chunk, { id: payload.id, text: step.value });
+        step = await reply.next();
       }
       socket.emit(ChatEvent.end, {
         id: payload.id,
         pending: this.chat.pendingSummary(user.id, payload.conversationId),
+        outcome: step.value.outcome ?? null,
       });
     } catch (error) {
       let code: ChatErrorCode = 'erro_interno';
@@ -198,6 +275,16 @@ export class ChatGateway
 
 function reject(code: ChatErrorCode): SendMessageAck {
   return { ok: false, ...chatError(code) };
+}
+
+/** A mensagem é a do primeiro campo reprovado, como no `ValidationPipe`. */
+function rejectOperation(failure: OperationFailure) {
+  const first = Object.values(failure.fieldErrors ?? {}).flat()[0];
+  return {
+    ...reject(failure.code),
+    ...(first ? { message: first } : {}),
+    ...(failure.fieldErrors ? { fieldErrors: failure.fieldErrors } : {}),
+  };
 }
 
 function connectError(code: ChatErrorCode): Error {
