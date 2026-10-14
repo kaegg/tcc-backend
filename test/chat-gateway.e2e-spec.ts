@@ -105,6 +105,13 @@ describe('Gateway do chat (TCC-022)', () => {
     return new Promise<T>((resolve) => socket.once(evento, resolve));
   }
 
+  /** A geração começou: o texto do modelo não chega mais ao cliente. */
+  async function modeloChamado() {
+    while (ollama.chatStream.mock.calls.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   const enviar = (socket: Socket, content: string, id = 'm1') =>
     socket.emitWithAck('message:send', {
       id,
@@ -449,6 +456,7 @@ describe('Gateway do chat (TCC-022)', () => {
           pending: null,
           outcome: 'registrado',
           report: null,
+          kind: 'sucesso',
         });
         expect(prisma.transaction.create).toHaveBeenCalledTimes(1);
         expect(ollama.chatStream).toHaveBeenCalledTimes(1);
@@ -496,9 +504,9 @@ describe('Gateway do chat (TCC-022)', () => {
   });
 
   describe('mensagens', () => {
-    it('confirma o recebimento e entrega a resposta em pedaços até o fim', async () => {
+    it('confirma o recebimento e entrega a resposta até o fim, com o tipo da resposta', async () => {
       ollama.chatStream.mockImplementation(() =>
-        responder('Olá', ', tudo bem?'),
+        responder('Texto livre do modelo'),
       );
       const socket = await conectado();
       const pedacos: string[] = [];
@@ -507,14 +515,19 @@ describe('Gateway do chat (TCC-022)', () => {
       );
       const fim = esperar<{ id: string }>(socket, 'reply:end');
 
-      expect(await enviar(socket, 'oi')).toEqual({ ok: true });
+      expect(await enviar(socket, 'me explica como você funciona')).toEqual({
+        ok: true,
+      });
       expect(await fim).toEqual({
         id: 'm1',
         pending: null,
         outcome: null,
         report: null,
+        kind: 'informacao',
       });
-      expect(pedacos).toEqual(['Olá', ', tudo bem?']);
+      // A ajuda é escrita pelo backend (TCC-028): o texto do modelo não passa.
+      expect(pedacos.join('')).toMatch(/^Posso registrar receitas e despesas/);
+      expect(pedacos.join('')).not.toContain('Texto livre do modelo');
     });
 
     it('recusa mensagem inválida sem chamar o modelo', async () => {
@@ -543,9 +556,8 @@ describe('Gateway do chat (TCC-022)', () => {
       const socket = await conectado();
       const erro = esperar<{ id: string; code: string }>(socket, 'reply:error');
 
-      const primeiro = esperar(socket, 'reply:chunk');
-      await enviar(socket, 'oi');
-      await primeiro;
+      await enviar(socket, 'qual a capital da França?');
+      await modeloChamado();
       socket.emit('reply:cancel', { id: 'm1' });
 
       expect(await erro).toMatchObject({ id: 'm1', code: 'cancelado' });
@@ -559,9 +571,8 @@ describe('Gateway do chat (TCC-022)', () => {
       });
       const socket = await conectado();
 
-      const primeiro = esperar(socket, 'reply:chunk');
-      await enviar(socket, 'oi');
-      await primeiro;
+      await enviar(socket, 'qual a capital da França?');
+      await modeloChamado();
       socket.disconnect();
 
       await new Promise((resolve) => setTimeout(resolve, 100));

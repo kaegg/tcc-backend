@@ -15,6 +15,7 @@ import {
   REPLACED_NOTICE,
 } from './chat.service';
 import type { Interpretation } from './interpretation/interpretation';
+import { HELP_REPLY } from './replies';
 
 const ALIMENTACAO = '0199a1b2-c3d4-7000-8000-00000000c001';
 const TRANSPORTE = '0199a1b2-c3d4-7000-8000-00000000c002';
@@ -121,13 +122,16 @@ describe('ChatService', () => {
       expect(enviado.messages.at(-1)).toEqual({ role: 'user', content: 'oi' });
     });
 
-    it('entrega o texto do modelo progressivamente fora do registro', async () => {
-      modeloResponde(saida('ajuda', {}, 'Posso registrar e consultar.'));
+    it('nenhum texto livre do modelo chega ao usuário (TCC-028)', async () => {
+      modeloResponde(saida('ajuda', {}, 'Texto inventado pelo modelo.'));
 
-      const { pedacos, texto } = await enviar('o que você faz?');
+      const { texto, resultado } = await enviar(
+        'me explica como você funciona',
+      );
 
-      expect(pedacos.length).toBeGreaterThan(1);
-      expect(texto).toBe('Posso registrar e consultar.');
+      expect(chatStream).toHaveBeenCalledTimes(1);
+      expect(texto).toBe(HELP_REPLY);
+      expect(resultado.kind).toBe('informacao');
     });
 
     it('rejeita saída fora do esquema sem registrar o conteúdo no log', async () => {
@@ -157,7 +161,7 @@ describe('ChatService', () => {
       expect(pedacos).toHaveLength(1);
       expect(texto).not.toContain('99');
       expect(texto).toBe(
-        'Entendi: despesa de R$ 45,00 em Alimentação, ontem (12/10/2026). Confira os dados antes de registrar.',
+        'Entendi: despesa de R$ 45,00 em Alimentação, ontem (12/10/2026). Confira os dados no cartão: para registrar, toque em Confirmar ou responda “pode registrar”.',
       );
       expect(resultado.transactionDraft).toMatchObject({
         amount: '45.00',
@@ -526,8 +530,8 @@ describe('ChatService', () => {
       const id = await proposta();
       await service.editPending('u1', 'c1', id, valores());
 
-      modeloResponde(saida('ajuda', {}, 'Ok.'));
-      await enviar('o que você faz?');
+      modeloResponde(saida('fora_do_escopo'));
+      await enviar('qual a capital da França?');
 
       const historico = pedido(1).messages;
       expect(historico.at(-3)).toEqual({
@@ -815,6 +819,92 @@ describe('ChatService', () => {
     });
   });
 
+  describe('respostas padronizadas (TCC-028)', () => {
+    it('“ajuda” responde com exemplos de despesa, receita e relatório, sem o modelo', async () => {
+      const { texto, resultado } = await enviar('Ajuda!');
+
+      expect(chatStream).not.toHaveBeenCalled();
+      expect(texto).toBe(HELP_REPLY);
+      expect(texto).toMatch(/Despesa: /);
+      expect(texto).toMatch(/Receita: /);
+      expect(texto).toMatch(/Relatório: /);
+      expect(resultado.kind).toBe('informacao');
+    });
+
+    it('os exemplos da ajuda funcionam de verdade', async () => {
+      modeloResponde(saida('registrar_lancamento', { type: 'receita' }));
+      const receita = await enviar('recebi 3.000 de salário dia 5');
+
+      expect(receita.resultado.transactionDraft).toMatchObject({
+        type: 'receita',
+        amount: '3000.00',
+        categoryId: SALARIO,
+        date: '2026-10-05',
+      });
+    });
+
+    it('a ajuda no meio de um lançamento lembra dele', async () => {
+      modeloResponde(saida('registrar_lancamento', { type: 'despesa' }));
+      await enviar('gastei 30 reais');
+
+      const { texto } = await enviar('ajuda');
+
+      expect(texto.startsWith(HELP_REPLY)).toBe(true);
+      expect(texto).toContain('Lembrete: o lançamento em andamento');
+    });
+
+    it.each([
+      'devo investir meu saldo em CDB?',
+      'vale a pena fazer um financiamento?',
+      'me recomenda onde aplicar meu dinheiro',
+    ])('recusa aconselhamento financeiro: "%s"', async (pergunta) => {
+      modeloResponde(
+        saida('fora_do_escopo', {}, 'Invista tudo em ações da empresa X!'),
+      );
+
+      const { texto } = await enviar(pergunta);
+
+      expect(texto).not.toContain('Invista');
+      expect(texto).toMatch(
+        /^Não dou recomendações de investimento nem aconselhamento financeiro profissional/,
+      );
+    });
+
+    it('outro assunto: diz o que o assistente faz e como ver exemplos', async () => {
+      modeloResponde(saida('fora_do_escopo', {}, 'Paris.'));
+
+      const { texto } = await enviar('qual a capital da França?');
+
+      expect(texto).toBe(
+        'Só consigo ajudar com seus lançamentos e relatórios no IntelliFinance. Por exemplo: “gastei 30 no uber hoje” ou “quanto gastei este mês?”. Para ver mais exemplos, escreva “ajuda”.',
+      );
+    });
+
+    it('classifica cada resposta: pergunta, confirmação pendente, sucesso, erro', async () => {
+      modeloResponde(
+        saida('registrar_lancamento', {
+          type: 'despesa',
+          category: 'Alimentação',
+        }),
+      );
+      const pergunta = await enviar('gastei no mercado');
+      expect(pergunta.resultado.kind).toBe('pergunta');
+
+      const confirmacao = await enviar('45');
+      expect(confirmacao.resultado.kind).toBe('confirmacao');
+
+      const sucesso = await enviar('pode registrar');
+      expect(sucesso.resultado.kind).toBe('sucesso');
+
+      modeloResponde(saida('consultar_relatorio'));
+      const erro = await enviar('quanto gastei em 31/02?');
+      expect(erro.resultado.kind).toBe('erro');
+
+      const cancelado = await enviar('cancela');
+      expect(cancelado.resultado.kind).toBe('informacao');
+    });
+  });
+
   describe('mudança de assunto', () => {
     it('responde a outra pergunta e lembra do lançamento em andamento', async () => {
       modeloResponde(
@@ -825,10 +915,10 @@ describe('ChatService', () => {
       );
       await enviar('gastei no mercado');
 
-      modeloResponde(saida('ajuda', {}, 'Posso registrar e consultar.'));
-      const { texto } = await enviar('o que você sabe fazer?');
+      modeloResponde(saida('fora_do_escopo'));
+      const { texto } = await enviar('qual a previsão do tempo?');
 
-      expect(texto).toContain('Posso registrar e consultar.');
+      expect(texto).toContain('Só consigo ajudar com seus lançamentos');
       expect(texto).toContain(
         'Lembrete: o lançamento em andamento ainda precisa de valor',
       );

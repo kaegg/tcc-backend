@@ -15,6 +15,7 @@ import { ConversationMemory } from './conversation-memory';
 import {
   isCancelCommand,
   isConfirmCommand,
+  isHelpCommand,
   isShortAnswer,
   looksLikeQuestion,
 } from './extraction/commands';
@@ -52,6 +53,7 @@ import { JsonFieldStreamer } from './interpretation/json-field-streamer';
 import { referenceDate } from './interpretation/reference-date';
 import { PendingOperations, type PendingOperation } from './pending-operations';
 import { PendingQueries } from './pending-queries';
+import { HELP_REPLY, outOfScopeReply, type ReplyKind } from './replies';
 import { stateFromEdit, toProposal, type Proposal } from './proposal';
 import {
   PERIOD_EXAMPLES,
@@ -161,10 +163,19 @@ export class ChatService {
       const result = committed.ok
         ? {
             ...plainReply('confirmar', committed.reply),
+            kind: 'sucesso' as const,
             outcome: 'registrado' as const,
           }
-        : plainReply('confirmar', commitFailureReply(committed));
+        : plainReply('confirmar', commitFailureReply(committed), 'erro');
       yield result.reply;
+      this.remember(userId, conversationId, content, result);
+      return result;
+    }
+
+    if (isHelpCommand(normalized)) {
+      this.queries.delete(userId, conversationId);
+      const result = plainReply('ajuda', HELP_REPLY);
+      yield* this.withReminder(result, pending);
       this.remember(userId, conversationId, content, result);
       return result;
     }
@@ -274,9 +285,12 @@ export class ChatService {
       yield result.reply;
     } else {
       this.queries.delete(userId, conversationId);
-      result = fromModelOutput(output, context);
-      if (!streamed) yield result.reply;
-      yield* this.withReminder(result, pending, false);
+      result = { ...fromModelOutput(output, context), kind: 'informacao' };
+      if (output.intent.name === 'ajuda') result.reply = HELP_REPLY;
+      if (output.intent.name === 'fora_do_escopo') {
+        result.reply = outOfScopeReply(normalized);
+      }
+      yield* this.withReminder(result, pending, !streamed);
     }
 
     this.logger.debug(
@@ -319,7 +333,7 @@ export class ChatService {
     );
     if (result.ok) {
       this.remember(userId, conversationId, 'confirmar', {
-        ...plainReply('confirmar', result.reply),
+        ...plainReply('confirmar', result.reply, 'sucesso'),
         outcome: 'registrado',
       });
     }
@@ -437,6 +451,10 @@ export class ChatService {
         missingFields: ['periodStart', 'periodEnd'],
         ambiguous: reading.kind !== 'ausente',
         reply: question as string,
+        kind:
+          reading.kind === 'invalido' || reading.kind === 'resolvido'
+            ? 'erro'
+            : 'pergunta',
       };
     }
 
@@ -451,6 +469,7 @@ export class ChatService {
       },
       reply: composeReportReply(query, report, context.referenceDate),
       report: reading.period,
+      kind: 'sucesso',
     };
   }
 
@@ -610,6 +629,7 @@ export class ChatService {
       state,
       attempts,
     });
+    const draft = buildTransactionDraft(state);
 
     return {
       intent: REGISTER,
@@ -619,7 +639,8 @@ export class ChatService {
       defaults: state.defaults,
       ambiguous: modelAmbiguous || state.clarifications.length > 0,
       reply: composeRegistrationReply(state, context, attempts),
-      transactionDraft: buildTransactionDraft(state),
+      transactionDraft: draft,
+      kind: draft ? 'confirmacao' : 'pergunta',
     };
   }
 
@@ -647,7 +668,11 @@ export class ChatService {
   }
 }
 
-function plainReply(intent: string, reply: string): Interpretation {
+function plainReply(
+  intent: string,
+  reply: string,
+  kind: ReplyKind = 'informacao',
+): Interpretation {
   return {
     intent,
     entities: emptyEntities(),
@@ -657,6 +682,7 @@ function plainReply(intent: string, reply: string): Interpretation {
     ambiguous: false,
     reply,
     transactionDraft: null,
+    kind,
   };
 }
 

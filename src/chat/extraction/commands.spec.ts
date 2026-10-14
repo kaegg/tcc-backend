@@ -1,6 +1,7 @@
 import {
   isCancelCommand,
   isConfirmCommand,
+  isHelpCommand,
   isShortAnswer,
   looksLikeQuestion,
 } from './commands';
@@ -36,6 +37,29 @@ describe('isCancelCommand', () => {
     'nada de mais, foi 45',
   ])('não confunde com comando: "%s"', (texto) => {
     expect(isCancelCommand(n(texto))).toBe(false);
+  });
+});
+
+describe('isHelpCommand', () => {
+  it.each([
+    'ajuda',
+    'Ajuda!',
+    'me ajuda',
+    'exemplos',
+    'o que você faz?',
+    'o que vc sabe fazer',
+    'como funciona?',
+    'oi, ajuda por favor',
+  ])('reconhece "%s"', (texto) => {
+    expect(isHelpCommand(n(texto))).toBe(true);
+  });
+
+  it.each([
+    'me ajuda a registrar 50 no mercado',
+    'quanto gastei este mês?',
+    'oi',
+  ])('não confunde com ajuda: "%s"', (texto) => {
+    expect(isHelpCommand(n(texto))).toBe(false);
   });
 });
 

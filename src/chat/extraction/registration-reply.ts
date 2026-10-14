@@ -160,7 +160,7 @@ export function composeRegistrationReply(
   ].filter((text): text is string => Boolean(text));
 
   if (questions.length === 0) {
-    return `Entendi: ${known}. Confira os dados antes de registrar.`;
+    return `Entendi: ${known}. Confira os dados no cartão: para registrar, toque em Confirmar ou responda “pode registrar”.`;
   }
 
   const pending = [

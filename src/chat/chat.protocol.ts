@@ -27,12 +27,20 @@ export type ChatErrorCode =
   | 'dados_invalidos'
   | 'erro_interno';
 
+/**
+ * Cada mensagem diz o que aconteceu e o que fazer em seguida, sem termo
+ * técnico (TCC-028). O formulário em Lançamentos é a saída quando o
+ * assistente não responde: a tarefa nunca fica presa ao chatbot.
+ */
 export const CHAT_ERROR_MESSAGES: Record<ChatErrorCode, string> = {
-  indisponivel: 'O assistente está indisponível no momento.',
-  tempo_esgotado: 'O assistente demorou demais para responder.',
+  indisponivel:
+    'O assistente está indisponível no momento. Tente de novo em instantes ou use o formulário em Lançamentos.',
+  tempo_esgotado:
+    'O assistente demorou demais para responder. Tente de novo; se continuar, use o formulário em Lançamentos.',
   cancelado: 'A resposta foi interrompida.',
   ocupado: 'O assistente ainda está respondendo. Aguarde um instante.',
-  resposta_invalida: 'O assistente devolveu uma resposta inesperada.',
+  resposta_invalida:
+    'Não consegui interpretar esta mensagem. Tente escrever de outro jeito, por exemplo: “gastei 30 no mercado hoje”.',
   mensagem_invalida: `Escreva uma mensagem de 1 a ${MAX_MESSAGE_CHARS} caracteres.`,
   limite_excedido: 'Muitas mensagens em pouco tempo. Aguarde um instante.',
   sessao_expirada: 'Sua sessão expirou. Entre novamente.',
@@ -42,7 +50,7 @@ export const CHAT_ERROR_MESSAGES: Record<ChatErrorCode, string> = {
     'Os dados deste lançamento mudaram. Confira a versão mais recente antes de continuar.',
   operacao_incompleta: 'Ainda faltam dados para registrar este lançamento.',
   dados_invalidos: 'Revise os dados do lançamento.',
-  erro_interno: 'Não foi possível processar a mensagem.',
+  erro_interno: 'Não foi possível processar a mensagem. Tente de novo.',
 };
 
 export interface SendMessagePayload {
