@@ -7,6 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { io, type Socket } from 'socket.io-client';
 import type { App } from 'supertest/types';
 import { parseCorsOrigins } from './../src/common/cors-origins';
+import { Prisma } from './../src/generated/prisma/client';
 import { LlmError } from './../src/llm/llm.errors';
 import type { ChatRequest } from './../src/llm/ollama.service';
 import {
@@ -226,11 +227,16 @@ describe('Gateway do chat (TCC-022)', () => {
       expect((await primeiro).pending).toEqual({
         missing: ['valor'],
         ready: false,
+        proposal: null,
       });
 
       const segundo = esperar<{ pending: unknown }>(socket, 'reply:end');
       await enviar(socket, '45,90', 'm2');
-      expect((await segundo).pending).toEqual({ missing: [], ready: true });
+      expect((await segundo).pending).toMatchObject({
+        missing: [],
+        ready: true,
+        proposal: { amount: '45.90', categoryName: 'Alimentação' },
+      });
       expect(ollama.chatStream).toHaveBeenCalledTimes(1);
     });
 
@@ -251,6 +257,179 @@ describe('Gateway do chat (TCC-022)', () => {
       expect(ack).toMatchObject({ ok: true });
       expect(ack.reply).toMatch(/Nada foi registrado/);
       expect(prisma.transaction.create).not.toHaveBeenCalled();
+    });
+
+    describe('confirmação e edição (TCC-026)', () => {
+      type Fim = {
+        pending: { proposal: { id: string } | null } | null;
+        outcome: string | null;
+      };
+
+      beforeEach(() => {
+        prisma.transaction.create.mockImplementation(
+          ({ data }: { data: Record<string, unknown> }) =>
+            Promise.resolve({
+              ...data,
+              id: '0199a1b2-c3d4-7000-8000-0000000000f1',
+              amount: new Prisma.Decimal(data.amount as string),
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              deletedAt: null,
+              category: { name: 'Alimentação' },
+            }),
+        );
+        ollama.chatStream.mockImplementation(function* () {
+          yield registro({
+            type: 'despesa',
+            category: 'Alimentação',
+            description: 'Mercado',
+          });
+          return {};
+        });
+      });
+
+      async function comProposta() {
+        const socket = await conectado();
+        const fim = esperar<Fim>(socket, 'reply:end');
+        await enviar(socket, 'gastei 45 no mercado');
+        const { pending } = await fim;
+        return { socket, proposalId: pending?.proposal?.id ?? '' };
+      }
+
+      const confirmar = (socket: Socket, proposalId: string) =>
+        socket.emitWithAck('operation:confirm', {
+          conversationId: 'c1',
+          proposalId,
+        }) as Promise<Ack & { reply?: string }>;
+
+      it('grava como assistente, para o usuário do token, só depois do botão', async () => {
+        const { socket, proposalId } = await comProposta();
+        expect(prisma.transaction.create).not.toHaveBeenCalled();
+
+        const ack = await confirmar(socket, proposalId);
+
+        expect(ack).toMatchObject({ ok: true });
+        expect(ack.reply).toMatch(/^Pronto, registrei/);
+        expect(prisma.transaction.create).toHaveBeenCalledTimes(1);
+        const [{ data }] = prisma.transaction.create.mock.calls[0] as [
+          { data: Record<string, unknown> },
+        ];
+        expect(data).toMatchObject({
+          userId: USUARIO,
+          categoryId: CATEGORIA,
+          type: 'despesa',
+          amount: '45.00',
+          description: 'Mercado',
+          source: 'assistente',
+        });
+
+        expect(await confirmar(socket, proposalId)).toMatchObject({
+          ok: false,
+          code: 'operacao_inexistente',
+        });
+        expect(prisma.transaction.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('edita no cartão sem gravar e recusa confirmar a versão anterior', async () => {
+        const { socket, proposalId } = await comProposta();
+
+        const editado = (await socket.emitWithAck('operation:edit', {
+          conversationId: 'c1',
+          proposalId,
+          values: {
+            type: 'despesa',
+            amount: '60.00',
+            categoryId: CATEGORIA,
+            date: '2026-10-01',
+            description: 'Feira',
+          },
+        })) as Ack & { pending?: Fim['pending'] };
+
+        expect(editado.ok).toBe(true);
+        expect(editado.pending?.proposal).toMatchObject({
+          amount: '60.00',
+          date: '2026-10-01',
+          description: 'Feira',
+        });
+        expect(prisma.transaction.create).not.toHaveBeenCalled();
+
+        expect(await confirmar(socket, proposalId)).toMatchObject({
+          ok: false,
+          code: 'operacao_alterada',
+        });
+        expect(
+          await confirmar(socket, editado.pending?.proposal?.id ?? ''),
+        ).toMatchObject({ ok: true });
+      });
+
+      it('devolve a mensagem de cada campo reprovado na edição', async () => {
+        const { socket, proposalId } = await comProposta();
+
+        const ack = (await socket.emitWithAck('operation:edit', {
+          conversationId: 'c1',
+          proposalId,
+          values: {
+            type: 'despesa',
+            amount: '-5',
+            categoryId: CATEGORIA,
+            date: '2026-02-31',
+          },
+        })) as Ack & { fieldErrors?: Record<string, string[]> };
+
+        expect(ack).toMatchObject({
+          ok: false,
+          code: 'dados_invalidos',
+          message: 'O valor deve ser maior que zero.',
+        });
+        expect(Object.keys(ack.fieldErrors ?? {}).sort()).toEqual([
+          'amount',
+          'date',
+        ]);
+      });
+
+      it('confirma por texto e avisa o fim com o resultado', async () => {
+        const { socket } = await comProposta();
+
+        const fim = esperar<Fim>(socket, 'reply:end');
+        await enviar(socket, 'pode registrar', 'm2');
+
+        expect(await fim).toEqual({
+          id: 'm2',
+          pending: null,
+          outcome: 'registrado',
+        });
+        expect(prisma.transaction.create).toHaveBeenCalledTimes(1);
+        expect(ollama.chatStream).toHaveBeenCalledTimes(1);
+      });
+
+      it('não confirma enquanto uma resposta está em andamento', async () => {
+        const { socket, proposalId } = await comProposta();
+        ollama.chatStream.mockImplementation(pendurado);
+        await enviar(socket, 'quanto gastei este mês com transporte?', 'm2');
+
+        expect(await confirmar(socket, proposalId)).toMatchObject({
+          ok: false,
+          code: 'ocupado',
+        });
+        expect(prisma.transaction.create).not.toHaveBeenCalled();
+      });
+
+      it('recusa confirmação e edição malformadas', async () => {
+        const socket = await conectado();
+
+        expect(
+          await socket.emitWithAck('operation:confirm', {
+            conversationId: 'c1',
+          }),
+        ).toMatchObject({ ok: false, code: 'mensagem_invalida' });
+        expect(
+          await socket.emitWithAck('operation:edit', {
+            conversationId: 'c1',
+            proposalId: 'p1',
+            values: 'tudo',
+          }),
+        ).toMatchObject({ ok: false, code: 'mensagem_invalida' });
+      });
     });
 
     it('recusa cancelamento com conversa inválida', async () => {
@@ -277,7 +456,7 @@ describe('Gateway do chat (TCC-022)', () => {
       const fim = esperar<{ id: string }>(socket, 'reply:end');
 
       expect(await enviar(socket, 'oi')).toEqual({ ok: true });
-      expect(await fim).toEqual({ id: 'm1', pending: null });
+      expect(await fim).toEqual({ id: 'm1', pending: null, outcome: null });
       expect(pedacos).toEqual(['Olá', ', tudo bem?']);
     });
 

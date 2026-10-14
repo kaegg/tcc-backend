@@ -9,6 +9,8 @@ export const ChatEvent = {
   end: 'reply:end',
   error: 'reply:error',
   cancelOperation: 'operation:cancel',
+  confirmOperation: 'operation:confirm',
+  editOperation: 'operation:edit',
 } as const;
 
 export const MAX_MESSAGE_CHARS = 2000;
@@ -19,6 +21,10 @@ export type ChatErrorCode =
   | 'mensagem_invalida'
   | 'limite_excedido'
   | 'sessao_expirada'
+  | 'operacao_inexistente'
+  | 'operacao_alterada'
+  | 'operacao_incompleta'
+  | 'dados_invalidos'
   | 'erro_interno';
 
 export const CHAT_ERROR_MESSAGES: Record<ChatErrorCode, string> = {
@@ -30,6 +36,12 @@ export const CHAT_ERROR_MESSAGES: Record<ChatErrorCode, string> = {
   mensagem_invalida: `Escreva uma mensagem de 1 a ${MAX_MESSAGE_CHARS} caracteres.`,
   limite_excedido: 'Muitas mensagens em pouco tempo. Aguarde um instante.',
   sessao_expirada: 'Sua sessão expirou. Entre novamente.',
+  operacao_inexistente:
+    'Este lançamento não está mais aguardando confirmação. Envie os dados de novo para registrar.',
+  operacao_alterada:
+    'Os dados deste lançamento mudaram. Confira a versão mais recente antes de continuar.',
+  operacao_incompleta: 'Ainda faltam dados para registrar este lançamento.',
+  dados_invalidos: 'Revise os dados do lançamento.',
   erro_interno: 'Não foi possível processar a mensagem.',
 };
 
@@ -78,6 +90,39 @@ export function parseCancelOperation(raw: unknown): string | null {
   return typeof conversationId === 'string' && CLIENT_ID.test(conversationId)
     ? conversationId
     : null;
+}
+
+export interface OperationPayload {
+  conversationId: string;
+  proposalId: string;
+}
+
+export function parseConfirmOperation(raw: unknown): OperationPayload | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { conversationId, proposalId } = raw as Record<string, unknown>;
+  if (typeof conversationId !== 'string' || !CLIENT_ID.test(conversationId)) {
+    return null;
+  }
+  if (typeof proposalId !== 'string' || !CLIENT_ID.test(proposalId)) {
+    return null;
+  }
+  return { conversationId, proposalId };
+}
+
+/**
+ * Só a forma do envelope; os campos do lançamento são validados pelo DTO do
+ * formulário, que devolve a mensagem de cada campo.
+ */
+export function parseEditOperation(
+  raw: unknown,
+): (OperationPayload & { values: Record<string, unknown> }) | null {
+  const operation = parseConfirmOperation(raw);
+  if (!operation) return null;
+  const { values } = raw as Record<string, unknown>;
+  if (typeof values !== 'object' || values === null || Array.isArray(values)) {
+    return null;
+  }
+  return { ...operation, values: values as Record<string, unknown> };
 }
 
 export function chatError(code: ChatErrorCode) {

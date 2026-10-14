@@ -1,7 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import type { EntityName } from './interpretation/entities';
 import type { RegistrationState } from './extraction/registration';
 
 export interface PendingOperation {
+  /**
+   * Versão da proposta: muda a cada alteração. Confirmar e editar exigem a
+   * versão que o usuário está vendo, para nunca gravar dados diferentes dos
+   * que estavam na tela.
+   */
+  id: string;
   intent: 'registrar_lancamento';
   state: RegistrationState;
   /** Mensagens seguidas em que cada campo continuou sem resposta. */
@@ -36,20 +43,26 @@ export class PendingOperations {
   set(
     userId: string,
     conversationId: string,
-    operation: Omit<PendingOperation, 'updatedAt'>,
-  ): void {
+    operation: Omit<PendingOperation, 'id' | 'updatedAt'> & { id?: string },
+  ): PendingOperation {
     let operations = this.byUser.get(userId);
     if (!operations) {
       operations = new Map();
       this.byUser.set(userId, operations);
     }
+    const stored = {
+      ...operation,
+      id: operation.id ?? randomUUID(),
+      updatedAt: this.now(),
+    };
     operations.delete(conversationId);
-    operations.set(conversationId, { ...operation, updatedAt: this.now() });
+    operations.set(conversationId, stored);
 
     while (operations.size > MAX_PER_USER) {
       const [oldest] = operations.keys();
       operations.delete(oldest);
     }
+    return stored;
   }
 
   delete(userId: string, conversationId: string): boolean {

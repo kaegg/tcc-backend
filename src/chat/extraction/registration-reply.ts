@@ -133,6 +133,13 @@ function retryHint(field: EntityName, attempts: number): string | null {
     : `Dica: ${tip}. Para desistir, diga “cancelar”.`;
 }
 
+export function composeRegisteredReply(
+  state: RegistrationState,
+  reference: string,
+): string {
+  return `Pronto, registrei: ${summary(state, reference)}. O lançamento já aparece em Lançamentos e nos relatórios.`;
+}
+
 /**
  * Resposta do assistente para um lançamento em preparo, escrita pelo backend a
  * partir do estado validado — nunca pelo modelo. O texto do modelo poderia
