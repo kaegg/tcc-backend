@@ -1,5 +1,6 @@
 import type { CreateTransactionDto } from '../../transactions/dto/create-transaction.dto';
 import type { Clarification } from '../extraction/registration';
+import type { ReplyKind } from '../replies';
 import {
   ENTITY_FIELDS,
   MODEL_ENTITY_NAMES,
@@ -30,6 +31,7 @@ export interface Interpretation {
   outcome?: 'registrado' | 'cancelado';
   /** Período consultado, para a interface abrir o mesmo relatório. */
   report?: { from: string; to: string };
+  kind?: ReplyKind;
 }
 
 export interface ModelOutput {

@@ -1,3 +1,4 @@
+import { HELP_REPLY } from '../replies';
 import type { EntityName } from './entities';
 
 export interface IntentDefinition {
@@ -28,6 +29,10 @@ export interface IntentDefinition {
  * Nas consultas, o modelo só escolhe a intenção (e sugere tipo e categoria): o
  * período sai do texto (`extraction/periods.ts`) e os números, do
  * `ReportsService` (TCC-027).
+ *
+ * Todas as respostas são escritas pelo backend (TCC-028): a ajuda precisa
+ * trazer exemplos que funcionam, e um texto livre do modelo em "fora do
+ * escopo" seria justamente onde um aconselhamento financeiro escaparia (RN08).
  */
 export const INTENTS = [
   {
@@ -63,8 +68,8 @@ export const INTENTS = [
       'o usuário cumprimenta, pergunta o que o assistente faz ou como usá-lo',
     entities: [],
     required: [],
-    fallbackReply:
-      'Posso registrar receitas e despesas e consultar seus relatórios. Por exemplo: "gastei 45 reais no mercado hoje".',
+    fallbackReply: HELP_REPLY,
+    modelReply: false,
   },
   {
     name: 'fora_do_escopo',
@@ -74,6 +79,7 @@ export const INTENTS = [
     required: [],
     fallbackReply:
       'Só consigo ajudar com seus lançamentos e relatórios no IntelliFinance.',
+    modelReply: false,
   },
 ] as const satisfies readonly IntentDefinition[];
 

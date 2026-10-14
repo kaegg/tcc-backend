@@ -4,6 +4,9 @@ const CANCEL =
 const CONFIRM =
   /^(?:(?:sim|ok|isso|certo|beleza|perfeito|exato|correto|esta certo|ta certo|tudo certo)\s*)*(?:(?:pode\s+)?(?:confirmar|confirma|confirme|confirmo|confirmado|registrar|registra|registre|lancar|lanca|lance|salvar|salva|salve|gravar|grava|grave)|pode|sim|isso mesmo|esta certo|ta certo|tudo certo|correto)(?:\s+(?:sim|isso|ai|o lancamento|esse lancamento|este lancamento|por favor|pf|pfv|entao|mesmo|obrigado|obrigada|valeu))*$/;
 
+const HELP =
+  /^(?:(?:oi|ola|bom dia|boa tarde|boa noite)\s+)?(?:ajuda|me ajuda|preciso de ajuda|help|socorro|exemplos?|comandos|o que (?:voce|vc) (?:faz|sabe fazer|pode fazer)|como (?:funciona|usar|uso|te uso)(?: isso| o assistente)?)(?:\s+(?:por favor|pf|pfv))?$/;
+
 /** Mensagem normalizada, sem pontuação e espaços repetidos. */
 function compact(text: string): string {
   return text
@@ -15,6 +18,11 @@ function compact(text: string): string {
 /** "cancela", "deixa pra lá", "não quero mais": desistir do lançamento. */
 export function isCancelCommand(normalized: string): boolean {
   return CANCEL.test(compact(normalized));
+}
+
+/** "ajuda", "exemplos", "o que você faz?": respondido sem o modelo. */
+export function isHelpCommand(normalized: string): boolean {
+  return HELP.test(compact(normalized));
 }
 
 /**

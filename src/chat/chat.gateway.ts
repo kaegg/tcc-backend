@@ -256,6 +256,7 @@ export class ChatGateway
         pending: this.chat.pendingSummary(user.id, payload.conversationId),
         outcome: step.value.outcome ?? null,
         report: step.value.report ?? null,
+        kind: step.value.kind ?? 'informacao',
       });
     } catch (error) {
       let code: ChatErrorCode = 'erro_interno';
