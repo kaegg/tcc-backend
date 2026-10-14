@@ -22,14 +22,23 @@ const SESSAO = '0199a1b2-c3d4-7000-8000-0000000000b1';
 
 type Ack = { ok: boolean; code?: string; message?: string };
 
+/** Abertura da saída estruturada até o início do texto ao usuário. */
+const INICIO_DA_SAIDA =
+  '{"intent":"ajuda","entities":{"type":null,"amount":null,"date":null,' +
+  '"category":null,"description":null,"periodStart":null,"periodEnd":null},' +
+  '"ambiguous":false,"reply":"';
+
+/** Saída estruturada do modelo, com o texto ao usuário nos pedaços dados. */
 function* responder(...pedacos: string[]) {
+  yield INICIO_DA_SAIDA;
   for (const pedaco of pedacos) yield pedaco;
+  yield '"}';
   return {};
 }
 
 /** Fica gerando até ser cancelado, como uma resposta longa do modelo. */
 async function* pendurado(request: ChatRequest) {
-  yield 'começo';
+  yield `${INICIO_DA_SAIDA}começo`;
   await new Promise((_, reject) => {
     request.signal?.addEventListener('abort', () =>
       reject(new LlmError('cancelado')),
