@@ -7,6 +7,7 @@ import {
   OllamaService,
   type ChatMessage,
 } from '../llm/ollama.service';
+import { ReportsService } from '../reports/reports.service';
 import type { TransactionResponseDto } from '../transactions/dto/transaction-response.dto';
 import { TransactionsService } from '../transactions/transactions.service';
 import type { ChatErrorCode } from './chat.protocol';
@@ -29,6 +30,7 @@ import {
   composeRegisteredReply,
   composeRegistrationReply,
 } from './extraction/registration-reply';
+import { extractPeriod, type PeriodReading } from './extraction/periods';
 import { normalize } from './extraction/text';
 import { buildTransactionDraft } from './extraction/transaction-draft';
 import {
@@ -49,7 +51,17 @@ import {
 import { JsonFieldStreamer } from './interpretation/json-field-streamer';
 import { referenceDate } from './interpretation/reference-date';
 import { PendingOperations, type PendingOperation } from './pending-operations';
+import { PendingQueries } from './pending-queries';
 import { stateFromEdit, toProposal, type Proposal } from './proposal';
+import {
+  PERIOD_EXAMPLES,
+  checkPeriod,
+  composeReportReply,
+  periodQuestion,
+  readQuery,
+  type QueryIntent,
+  type ReportQuery,
+} from './report-query';
 
 export interface PendingSummary {
   /** Nomes dos campos que ainda faltam ou estão em dúvida, em português. */
@@ -87,18 +99,24 @@ export const REPLACED_NOTICE =
   'O lançamento anterior, que ainda não tinha sido registrado, foi substituído por este.';
 
 const REGISTER = 'registrar_lancamento';
+const QUERY_INTENTS: readonly string[] = [
+  'consultar_relatorio',
+  'obter_resumo',
+] satisfies QueryIntent[];
 
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
   private readonly memory = new ConversationMemory();
   private readonly pending = new PendingOperations();
+  private readonly queries = new PendingQueries();
   now: () => Date = () => new Date();
 
   constructor(
     private readonly llm: OllamaService,
     private readonly categories: CategoriesService,
     private readonly transactions: TransactionsService,
+    private readonly reports: ReportsService,
   ) {}
 
   /**
@@ -118,8 +136,10 @@ export class ChatService {
     const context = await this.buildContext();
     const normalized = normalize(content);
     const pending = this.pending.get(userId, conversationId);
+    const waiting = this.queries.get(userId, conversationId);
 
     if (isCancelCommand(normalized)) {
+      this.queries.delete(userId, conversationId);
       const reply = pending ? CANCELLED_REPLY : NOTHING_TO_CANCEL_REPLY;
       if (pending) this.pending.delete(userId, conversationId);
       const result = plainReply('cancelar', reply);
@@ -147,6 +167,34 @@ export class ChatService {
       yield result.reply;
       this.remember(userId, conversationId, content, result);
       return result;
+    }
+
+    // A resposta a "de qual período?" ("este mês", "setembro") também é lida
+    // sem o modelo. A consulta que espera é sempre a última pergunta feita:
+    // qualquer outra intenção a descarta.
+    if (
+      waiting &&
+      isShortAnswer(normalized) &&
+      !looksLikeQuestion(normalized)
+    ) {
+      const reading = extractPeriod(normalized, context.referenceDate);
+      if (reading.kind !== 'ausente') {
+        const result = await this.answerQuery(
+          userId,
+          conversationId,
+          {
+            intent: waiting.intent,
+            normalized,
+            model: null,
+            previous: waiting,
+          },
+          reading,
+          context,
+        );
+        yield* this.withReminder(result, pending);
+        this.remember(userId, conversationId, content, result);
+        return result;
+      }
     }
 
     // Resposta curta a uma pergunta do assistente ("45", "ontem",
@@ -189,7 +237,22 @@ export class ChatService {
     }
 
     let result: Interpretation;
-    if (output.intent.name === REGISTER) {
+    if (QUERY_INTENTS.includes(output.intent.name)) {
+      result = await this.answerQuery(
+        userId,
+        conversationId,
+        {
+          intent: output.intent.name as QueryIntent,
+          normalized,
+          model: output.entities,
+          previous: waiting,
+        },
+        extractPeriod(normalized, context.referenceDate),
+        context,
+      );
+      yield* this.withReminder(result, pending);
+    } else if (output.intent.name === REGISTER) {
+      this.queries.delete(userId, conversationId);
       const base = this.continues(pending, normalized, context)
         ? pending
         : null;
@@ -210,15 +273,10 @@ export class ChatService {
       if (pending && !base) result.reply = `${REPLACED_NOTICE} ${result.reply}`;
       yield result.reply;
     } else {
+      this.queries.delete(userId, conversationId);
       result = fromModelOutput(output, context);
       if (!streamed) yield result.reply;
-      // Outro assunto não descarta o lançamento: ele espera, e o usuário é
-      // lembrado de como continuar ou desistir.
-      if (pending) {
-        const reminder = pendingReminder(pending.state);
-        result.reply = `${result.reply}\n\n${reminder}`;
-        yield `\n\n${reminder}`;
-      }
+      yield* this.withReminder(result, pending, false);
     }
 
     this.logger.debug(
@@ -323,6 +381,93 @@ export class ChatService {
       plainReply('cancelar', reply),
     );
     return reply;
+  }
+
+  /**
+   * Consulta de relatório (TCC-027). O período vem do texto e os números, do
+   * `ReportsService.overview` — o mesmo serviço e a mesma validação de período
+   * da tela de relatórios, então chatbot e tela dão o mesmo número (RNF12).
+   * Sem período seguro, pergunta e guarda o que foi pedido.
+   */
+  private async answerQuery(
+    userId: string,
+    conversationId: string,
+    asked: {
+      intent: QueryIntent;
+      normalized: string;
+      model: Record<string, unknown> | null;
+      previous: ReportQuery | null;
+    },
+    reading: PeriodReading,
+    context: InterpretationContext,
+  ): Promise<Interpretation> {
+    const query = readQuery(
+      asked.intent,
+      asked.normalized,
+      asked.model,
+      context,
+      asked.previous,
+    );
+    const entities = {
+      ...emptyEntities(),
+      type:
+        query.category?.type ??
+        (query.focus === 'despesa' || query.focus === 'receita'
+          ? query.focus
+          : null),
+      category: query.category
+        ? { id: query.category.id, name: query.category.name }
+        : null,
+    };
+    const base = { ...plainReply(query.intent, ''), entities };
+
+    let question: string | null = null;
+    if (reading.kind !== 'resolvido') {
+      question = periodQuestion(reading, context.referenceDate);
+    } else {
+      const invalid = checkPeriod(reading.period);
+      if (invalid) {
+        question = `Não consigo consultar esse período: ${invalid} ${PERIOD_EXAMPLES}`;
+      }
+    }
+    if (question !== null || reading.kind !== 'resolvido') {
+      this.queries.set(userId, conversationId, query);
+      return {
+        ...base,
+        missingFields: ['periodStart', 'periodEnd'],
+        ambiguous: reading.kind !== 'ausente',
+        reply: question as string,
+      };
+    }
+
+    this.queries.delete(userId, conversationId);
+    const report = await this.reports.overview(userId, reading.period);
+    return {
+      ...base,
+      entities: {
+        ...entities,
+        periodStart: reading.period.from,
+        periodEnd: reading.period.to,
+      },
+      reply: composeReportReply(query, report, context.referenceDate),
+      report: reading.period,
+    };
+  }
+
+  /**
+   * Outro assunto não descarta o lançamento em andamento: ele espera, e o
+   * usuário é lembrado de como continuar ou desistir.
+   */
+  private *withReminder(
+    result: Interpretation,
+    pending: PendingOperation | null,
+    includeReply = true,
+  ): Generator<string, void, undefined> {
+    if (includeReply) yield result.reply;
+    if (!pending) return;
+    const reminder = pendingReminder(pending.state);
+    result.reply = `${result.reply}\n\n${reminder}`;
+    yield `\n\n${reminder}`;
   }
 
   /**

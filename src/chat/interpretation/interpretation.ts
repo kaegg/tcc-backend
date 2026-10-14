@@ -28,6 +28,8 @@ export interface Interpretation {
   transactionDraft: CreateTransactionDto | null;
   /** O que a mensagem fez com o lançamento pendente, quando o encerrou. */
   outcome?: 'registrado' | 'cancelado';
+  /** Período consultado, para a interface abrir o mesmo relatório. */
+  report?: { from: string; to: string };
 }
 
 export interface ModelOutput {
@@ -87,7 +89,7 @@ export function buildSystemPrompt(
     'Você é o interpretador do assistente do IntelliFinance, um sistema de gestão financeira pessoal.',
     'Responda somente com o objeto JSON pedido, sem texto fora dele.',
     'Você apenas interpreta. O sistema valida e executa depois, e só com a confirmação do usuário. Nunca diga que registrou, salvou, alterou, excluiu ou consultou algo.',
-    `Hoje é ${context.referenceWeekday}, ${context.referenceDate} (fuso America/Sao_Paulo). Converta períodos relativos, como "este mês", a partir dessa data.`,
+    `Hoje é ${context.referenceWeekday}, ${context.referenceDate} (fuso America/Sao_Paulo).`,
     '',
     'Intenções (campo intent):',
     ...intents.map((intent) => `- ${intent.name}: ${intent.description}.`),

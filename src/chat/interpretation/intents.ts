@@ -24,6 +24,10 @@ export interface IntentDefinition {
  *
  * `registrar_lancamento` não exige a data: o formulário assume hoje quando o
  * usuário não informa, e o chatbot segue a mesma regra (TCC-024).
+ *
+ * Nas consultas, o modelo só escolhe a intenção (e sugere tipo e categoria): o
+ * período sai do texto (`extraction/periods.ts`) e os números, do
+ * `ReportsService` (TCC-027).
  */
 export const INTENTS = [
   {
@@ -42,6 +46,7 @@ export const INTENTS = [
     entities: ['type', 'category', 'periodStart', 'periodEnd'],
     required: ['periodStart', 'periodEnd'],
     fallbackReply: 'Entendi que você quer consultar seus lançamentos.',
+    modelReply: false,
   },
   {
     name: 'obter_resumo',
@@ -50,6 +55,7 @@ export const INTENTS = [
     entities: ['periodStart', 'periodEnd'],
     required: ['periodStart', 'periodEnd'],
     fallbackReply: 'Entendi que você quer o resumo do mês.',
+    modelReply: false,
   },
   {
     name: 'ajuda',

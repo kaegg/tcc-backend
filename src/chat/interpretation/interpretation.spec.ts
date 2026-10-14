@@ -84,14 +84,13 @@ describe('buildOutputSchema', () => {
       'ambiguous',
       'reply',
     ]);
-    // A data do lançamento sai do texto do usuário, não do modelo (TCC-024).
+    // Data do lançamento (TCC-024) e período da consulta (TCC-027) saem do
+    // texto do usuário, não do modelo.
     expect(schema.properties.entities.required).toEqual([
       'type',
       'amount',
       'category',
       'description',
-      'periodStart',
-      'periodEnd',
     ]);
   });
 
@@ -350,6 +349,8 @@ describe('toModelOutput', () => {
 
     const semData: Record<string, unknown> = { ...vazio };
     delete semData.date;
+    delete semData.periodStart;
+    delete semData.periodEnd;
     expect(JSON.parse(toModelOutput(interpretacao))).toEqual({
       intent: 'registrar_lancamento',
       entities: {
