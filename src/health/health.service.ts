@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { describeError } from '../common/utils/describe-error';
 import { redactSecrets } from '../common/utils/redact';
+import { OllamaService } from '../llm/ollama.service';
 import type { HealthResponseDto } from './dto/health-response.dto';
 
 /**
@@ -8,42 +10,28 @@ import type { HealthResponseDto } from './dto/health-response.dto';
  */
 const DATABASE_PROBE_TIMEOUT_MS = 2000;
 
-/**
- * Descreve a falha para o log.
- */
-function describe(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-
-  const partes = [error.name, error.message].filter(
-    (parte) => parte && parte.length > 0,
-  );
-
-  const code = (error as { code?: unknown }).code;
-  if (typeof code === 'string' && code.length > 0) partes.push(`code=${code}`);
-
-  if (error.cause instanceof Error && error.cause.message) {
-    partes.push(`causa: ${error.cause.message}`);
-  } else if (typeof error.cause === 'string') {
-    partes.push(`causa: ${error.cause}`);
-  }
-
-  return partes.join(' | ') || error.constructor.name;
-}
-
 @Injectable()
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ollama: OllamaService,
+  ) {}
 
   async check(): Promise<HealthResponseDto> {
-    const database = await this.checkDatabase();
+    const [database, llm] = await Promise.all([
+      this.checkDatabase(),
+      this.ollama.probe(),
+    ]);
 
+    // O LLM fica fora do estado agregado: o HEALTHCHECK do Docker usa o status
+    // HTTP, e Ollama fora derrubaria a aplicação inteira em vez de só o chatbot.
     return {
       status: database.status === 'ok' ? 'ok' : 'degradado',
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor(process.uptime()),
-      dependencies: { database },
+      dependencies: { database, llm },
     };
   }
 
@@ -69,7 +57,9 @@ export class HealthService {
       // A mensagem do driver costuma trazer a cadeia de conexao com senha;
       // por isso passa por `redactSecrets` mesmo indo so para o log.
       this.logger.error(
-        redactSecrets(`Verificacao do PostgreSQL falhou: ${describe(error)}`),
+        redactSecrets(
+          `Verificacao do PostgreSQL falhou: ${describeError(error)}`,
+        ),
       );
 
       return { status: 'indisponivel' };

@@ -27,7 +27,7 @@ enquanto o sistema estabiliza e, depois, por um túnel da Cloudflare, que entreg
 2. Baixar os arquivos para a pasta da aplicação (não precisa clonar):
 
    ```bash
-   for f in docker-compose.yml deploy.sh .env.example; do curl -fsSLO "https://raw.githubusercontent.com/kaegg/tcc-backend/main/deploy/$f"; done
+   for f in docker-compose.yml deploy.sh auto-deploy.sh .env.example; do curl -fsSLO "https://raw.githubusercontent.com/kaegg/tcc-backend/main/deploy/$f"; done
    ```
 3. `cp .env.example .env`, gerar os segredos com `openssl rand -hex 24` e `openssl rand -hex 48` e preencher.
 4. Subir e conferir:
@@ -117,8 +117,47 @@ sh deploy.sh web
 
 Cada um atualiza só o seu lado. Se a migração falhar, a API anterior continua no ar.
 
-O job `deploy` do CI entra por SSH e fica desligado enquanto `DEPLOY_ENABLED` não for `true`. Atrás de túnel o
-GitHub não alcança o servidor; a atualização automática nesse caso precisa ser puxada pelo próprio servidor.
+## Atualização automática
+
+Atrás do túnel o GitHub não alcança o servidor, então é o servidor que confere o registry. O `auto-deploy.sh` roda
+pelo cron a cada 5 minutos, baixa as imagens `latest` e só age quando alguma mudou:
+
+- **API nova:** backup do banco em `backups/` (guarda os 30 mais recentes) e `deploy.sh backend`.
+- **Frontend novo:** `deploy.sh web`.
+- **Falhou:** registra no log e não tenta de novo aquela mesma versão; o próximo push na `main` tenta outra vez.
+
+O CI publica a imagem de migração antes da API, então uma API nova sempre encontra as migrações do mesmo commit.
+O `docker-compose.yml` e os scripts **não** são atualizados sozinhos: quando mudarem, baixar de novo (passo 2 da
+primeira subida).
+
+Instalar, na pasta da aplicação:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/kaegg/tcc-backend/main/deploy/auto-deploy.sh
+```
+
+```bash
+(crontab -l 2>/dev/null; echo "*/5 * * * * cd $PWD && sh auto-deploy.sh >> auto-deploy.log 2>&1") | crontab -
+```
+
+O log só recebe linhas quando algo acontece:
+
+```bash
+tail -f auto-deploy.log
+```
+
+**Pausar** (por exemplo, durante as sessões do estudo de usabilidade) e **retomar**:
+
+```bash
+touch deploy-pausado
+```
+
+```bash
+rm deploy-pausado
+```
+
+Fixar `BACKEND_TAG` ou `FRONTEND_TAG` no `.env` também congela aquele lado. Para rodar `deploy.sh` à mão sem
+disputar com o automático, pausar antes.
 
 ## Operação
 

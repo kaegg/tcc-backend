@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import type { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
+import { OllamaService } from './../src/llm/ollama.service';
 import { PrismaService } from './../src/prisma/prisma.service';
 
 /**
@@ -68,6 +69,18 @@ export function createPrismaStub(): PrismaStub {
 }
 
 /**
+ * Dublê do OllamaService: sem ele o `/api/health` de cada teste tentaria a
+ * rede de verdade.
+ */
+export type OllamaStub = { probe: jest.Mock };
+
+export function createOllamaStub(): OllamaStub {
+  return {
+    probe: jest.fn().mockResolvedValue({ status: 'ok', latencyMs: 1 }),
+  };
+}
+
+/**
  * Segredo so de teste: o CI nao tem `.env`, e sem segredo forte a aplicacao
  * recusa subir (de proposito).
  */
@@ -82,12 +95,15 @@ process.env.JWT_SECRET ??= 'segredo-somente-para-testes-e2e-0123456789';
  */
 export async function createTestApp(
   prisma: PrismaStub,
+  ollama: OllamaStub = createOllamaStub(),
 ): Promise<INestApplication<App>> {
   const moduleFixture = await Test.createTestingModule({
     imports: [AppModule],
   })
     .overrideProvider(PrismaService)
     .useValue(prisma)
+    .overrideProvider(OllamaService)
+    .useValue(ollama)
     .compile();
 
   const app = moduleFixture.createNestApplication<NestExpressApplication>({

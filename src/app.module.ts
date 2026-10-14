@@ -21,7 +21,7 @@ import { ChatModule } from './chat/chat.module';
     TransactionsModule, // TCC-012 a TCC-015 - lancamentos
     CategoriesModule, // TCC-011 - categorias financeiras
     ReportsModule, // TCC-016 e TCC-017 - relatorios e resumo mensal
-    ChatModule, // TCC-021 e TCC-022 - chatbot e gateway Socket.IO
+    ChatModule, // TCC-020 a TCC-022 - integracao com o Ollama, chatbot e gateway Socket.IO
   ],
 })
 export class AppModule {}

@@ -4,8 +4,10 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import type { HealthResponseDto } from './../src/health/dto/health-response.dto';
 import {
+  createOllamaStub,
   createPrismaStub,
   createTestApp,
+  type OllamaStub,
   type PrismaStub,
 } from './create-test-app';
 
@@ -22,6 +24,7 @@ const saude = (res: request.Response): HealthResponseDto =>
 describe('GET /api/health (TCC-006)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaStub;
+  let ollama: OllamaStub;
   let logsDeErro: string[];
 
   beforeEach(async () => {
@@ -33,7 +36,8 @@ describe('GET /api/health (TCC-006)', () => {
       });
 
     prisma = createPrismaStub();
-    app = await createTestApp(prisma);
+    ollama = createOllamaStub();
+    app = await createTestApp(prisma, ollama);
   });
 
   afterEach(async () => {
@@ -50,6 +54,7 @@ describe('GET /api/health (TCC-006)', () => {
 
       expect(body.status).toBe('ok');
       expect(body.dependencies.database.status).toBe('ok');
+      expect(body.dependencies.llm.status).toBe('ok');
       expect(typeof body.dependencies.database.latencyMs).toBe('number');
       expect(typeof body.timestamp).toBe('string');
       expect(typeof body.uptimeSeconds).toBe('number');
@@ -107,6 +112,32 @@ describe('GET /api/health (TCC-006)', () => {
       expect(log).toContain('PostgreSQL');
       expect(log).not.toContain(SENHA);
       expect(log).toContain('postgresql://***:***@localhost:5432');
+    });
+  });
+
+  describe('com o Ollama fora (TCC-020)', () => {
+    beforeEach(() => {
+      ollama.probe.mockResolvedValue({ status: 'indisponivel' });
+    });
+
+    it('informa o LLM indisponivel sem degradar a API', async () => {
+      // O HEALTHCHECK do Docker olha so o status HTTP; 503 aqui tiraria do ar
+      // o CRUD inteiro por causa do chatbot.
+      const res = await request(app.getHttpServer())
+        .get('/api/health')
+        .expect(200);
+      const body = saude(res);
+
+      expect(body.status).toBe('ok');
+      expect(body.dependencies.llm.status).toBe('indisponivel');
+      expect(body.dependencies.llm.latencyMs).toBeUndefined();
+    });
+
+    it('nao expoe modelo nem endereco do Ollama', async () => {
+      const res = await request(app.getHttpServer()).get('/api/health');
+      const texto = JSON.stringify(res.body);
+
+      expect(texto).not.toMatch(/qwen|ollama|11434/i);
     });
   });
 
