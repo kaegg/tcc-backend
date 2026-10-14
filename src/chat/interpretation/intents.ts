@@ -10,6 +10,11 @@ export interface IntentDefinition {
   required: readonly EntityName[];
   /** Usada quando o modelo não devolve resposta textual aproveitável. */
   fallbackReply: string;
+  /**
+   * `false` quando o backend escreve a resposta a partir dos dados validados:
+   * o modelo deixa `reply` vazio e nada dele é exibido.
+   */
+  modelReply?: boolean;
 }
 
 /**
@@ -28,6 +33,7 @@ export const INTENTS = [
     entities: ['type', 'amount', 'date', 'category', 'description'],
     required: ['type', 'amount', 'category'],
     fallbackReply: 'Entendi que você quer registrar um lançamento.',
+    modelReply: false,
   },
   {
     name: 'consultar_relatorio',

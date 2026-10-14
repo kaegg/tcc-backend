@@ -5,7 +5,7 @@
 export function normalize(text: string): string {
   let out = '';
   for (const unit of text.split('')) {
-    const base = unit.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const base = unit.normalize('NFD').replace(/\p{M}/gu, '');
     out += base.length === 1 ? base : unit;
   }
   return out.toLowerCase();

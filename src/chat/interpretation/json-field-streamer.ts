@@ -32,6 +32,11 @@ export class JsonFieldStreamer {
 
   constructor(private readonly field: string) {}
 
+  /** O campo foi lido por inteiro. */
+  get done(): boolean {
+    return this.finished;
+  }
+
   push(chunk: string): string {
     let out = '';
     for (const char of chunk) out += this.step(char);

@@ -19,6 +19,7 @@ import {
 
 const USUARIO = '0199a1b2-c3d4-7000-8000-0000000000a1';
 const SESSAO = '0199a1b2-c3d4-7000-8000-0000000000b1';
+const CATEGORIA = '0199a1b2-c3d4-7000-8000-00000000c001';
 
 type Ack = { ok: boolean; code?: string; message?: string };
 
@@ -190,6 +191,79 @@ describe('Gateway do chat (TCC-022)', () => {
     });
   });
 
+  describe('lançamento em andamento (TCC-025)', () => {
+    const registro = (entidades: Record<string, unknown>) =>
+      JSON.stringify({
+        intent: 'registrar_lancamento',
+        entities: {
+          type: null,
+          amount: null,
+          category: null,
+          description: null,
+          periodStart: null,
+          periodEnd: null,
+          ...entidades,
+        },
+        ambiguous: false,
+        reply: '',
+      });
+
+    beforeEach(() => {
+      prisma.category.findMany.mockResolvedValue([
+        { id: CATEGORIA, name: 'Alimentação', type: 'despesa' },
+      ]);
+    });
+
+    it('informa o que falta no fim da resposta e completa com a resposta seguinte', async () => {
+      ollama.chatStream.mockImplementation(function* () {
+        yield registro({ type: 'despesa', category: 'Alimentação' });
+        return {};
+      });
+      const socket = await conectado();
+
+      const primeiro = esperar<{ pending: unknown }>(socket, 'reply:end');
+      await enviar(socket, 'gastei no mercado');
+      expect((await primeiro).pending).toEqual({
+        missing: ['valor'],
+        ready: false,
+      });
+
+      const segundo = esperar<{ pending: unknown }>(socket, 'reply:end');
+      await enviar(socket, '45,90', 'm2');
+      expect((await segundo).pending).toEqual({ missing: [], ready: true });
+      expect(ollama.chatStream).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancela pelo evento e confirma que nada foi registrado', async () => {
+      ollama.chatStream.mockImplementation(function* () {
+        yield registro({ type: 'despesa' });
+        return {};
+      });
+      const socket = await conectado();
+      const fim = esperar(socket, 'reply:end');
+      await enviar(socket, 'gastei 30');
+      await fim;
+
+      const ack = (await socket.emitWithAck('operation:cancel', {
+        conversationId: 'c1',
+      })) as Ack & { reply?: string };
+
+      expect(ack).toMatchObject({ ok: true });
+      expect(ack.reply).toMatch(/Nada foi registrado/);
+      expect(prisma.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('recusa cancelamento com conversa inválida', async () => {
+      const socket = await conectado();
+
+      expect(
+        await socket.emitWithAck('operation:cancel', {
+          conversationId: '../x',
+        }),
+      ).toMatchObject({ ok: false, code: 'mensagem_invalida' });
+    });
+  });
+
   describe('mensagens', () => {
     it('confirma o recebimento e entrega a resposta em pedaços até o fim', async () => {
       ollama.chatStream.mockImplementation(() =>
@@ -203,7 +277,7 @@ describe('Gateway do chat (TCC-022)', () => {
       const fim = esperar<{ id: string }>(socket, 'reply:end');
 
       expect(await enviar(socket, 'oi')).toEqual({ ok: true });
-      expect(await fim).toEqual({ id: 'm1' });
+      expect(await fim).toEqual({ id: 'm1', pending: null });
       expect(pedacos).toEqual(['Olá', ', tudo bem?']);
     });
 
