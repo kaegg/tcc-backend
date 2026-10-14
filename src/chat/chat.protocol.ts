@@ -8,6 +8,7 @@ export const ChatEvent = {
   chunk: 'reply:chunk',
   end: 'reply:end',
   error: 'reply:error',
+  cancelOperation: 'operation:cancel',
 } as const;
 
 export const MAX_MESSAGE_CHARS = 2000;
@@ -69,6 +70,14 @@ export function parseCancel(raw: unknown): string | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const { id } = raw as Record<string, unknown>;
   return typeof id === 'string' && CLIENT_ID.test(id) ? id : null;
+}
+
+export function parseCancelOperation(raw: unknown): string | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { conversationId } = raw as Record<string, unknown>;
+  return typeof conversationId === 'string' && CLIENT_ID.test(conversationId)
+    ? conversationId
+    : null;
 }
 
 export function chatError(code: ChatErrorCode) {

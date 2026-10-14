@@ -19,6 +19,7 @@ import {
   ChatEvent,
   chatError,
   parseCancel,
+  parseCancelOperation,
   parseSendMessage,
   type ChatErrorCode,
   type SendMessageAck,
@@ -139,6 +140,26 @@ export class ChatGateway
     if (id && current?.id === id) current.controller.abort();
   }
 
+  /** Desistir do lançamento em andamento pelo botão, sem digitar "cancelar". */
+  @SubscribeMessage(ChatEvent.cancelOperation)
+  async onCancelOperation(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() raw: unknown,
+  ): Promise<{ ok: true; reply: string } | SendMessageAck> {
+    const conversationId = parseCancelOperation(raw);
+    if (!conversationId) return reject('mensagem_invalida');
+
+    const user = userOf(socket);
+    if (!(await this.auth.isStillValid(user))) return reject('sessao_expirada');
+    // Durante a resposta, o lançamento ainda pode ser atualizado por ela.
+    if (this.inFlight.has(socket.id)) return reject('ocupado');
+
+    return {
+      ok: true,
+      reply: this.chat.cancelPending(user.id, conversationId),
+    };
+  }
+
   private async stream(
     socket: Socket,
     user: SocketUser,
@@ -154,7 +175,10 @@ export class ChatGateway
       )) {
         socket.emit(ChatEvent.chunk, { id: payload.id, text });
       }
-      socket.emit(ChatEvent.end, { id: payload.id });
+      socket.emit(ChatEvent.end, {
+        id: payload.id,
+        pending: this.chat.pendingSummary(user.id, payload.conversationId),
+      });
     } catch (error) {
       let code: ChatErrorCode = 'erro_interno';
       if (error instanceof LlmError) code = error.kind;

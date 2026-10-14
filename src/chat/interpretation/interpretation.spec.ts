@@ -84,7 +84,15 @@ describe('buildOutputSchema', () => {
       'ambiguous',
       'reply',
     ]);
-    expect(schema.properties.entities.required).toEqual(Object.keys(vazio));
+    // A data do lançamento sai do texto do usuário, não do modelo (TCC-024).
+    expect(schema.properties.entities.required).toEqual([
+      'type',
+      'amount',
+      'category',
+      'description',
+      'periodStart',
+      'periodEnd',
+    ]);
   });
 
   it('restringe a categoria às existentes, sem repetir nomes', () => {
@@ -141,8 +149,11 @@ describe('parseInterpretation', () => {
         description: 'Mercado',
       },
       missingFields: [],
+      clarifications: [],
+      defaults: [],
       ambiguous: false,
       reply: 'Entendi.',
+      transactionDraft: null,
     });
   });
 
@@ -172,7 +183,6 @@ describe('parseInterpretation', () => {
     ['valor zero', { amount: 0 }],
     ['valor com três casas', { amount: 45.123 }],
     ['valor acima do limite', { amount: 1e11 }],
-    ['valor em texto', { amount: '45' }],
   ])('descarta %s', (_caso, entidades) => {
     const resultado = interpretar(
       saida('registrar_lancamento', { type: 'despesa', ...entidades }),
@@ -338,10 +348,12 @@ describe('toModelOutput', () => {
       }),
     )!;
 
+    const semData: Record<string, unknown> = { ...vazio };
+    delete semData.date;
     expect(JSON.parse(toModelOutput(interpretacao))).toEqual({
       intent: 'registrar_lancamento',
       entities: {
-        ...vazio,
+        ...semData,
         type: 'despesa',
         amount: 45.5,
         category: 'Alimentação',

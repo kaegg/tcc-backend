@@ -37,6 +37,8 @@ const DESCRIPTION_MAX = 140;
 interface EntityField {
   prompt: string;
   schema: (context: InterpretationContext) => Record<string, unknown>;
+  /** `false` quando o backend extrai o campo sozinho e não o pede ao modelo. */
+  fromModel?: boolean;
 }
 
 const nullable = (schema: Record<string, unknown>) => ({
@@ -56,9 +58,13 @@ export const ENTITY_FIELDS: Record<EntityName, EntityField> = {
     prompt: 'valor em reais, número com ponto decimal (ex.: 120.5)',
     schema: () => nullable({ type: 'number' }),
   },
+  // A data do lançamento sai do texto do usuário (`extraction/dates.ts`): um
+  // modelo de 7B em CPU erra a conta de "sexta passada", e a data errada seria
+  // gravada sem ninguém notar.
   date: {
     prompt: 'data do fato, AAAA-MM-DD',
     schema: () => nullable({ type: 'string', format: 'date' }),
+    fromModel: false,
   },
   category: {
     prompt: 'uma das categorias listadas abaixo, escrita exatamente igual',
@@ -83,6 +89,10 @@ export const ENTITY_FIELDS: Record<EntityName, EntityField> = {
 };
 
 export const ENTITY_NAMES = Object.keys(ENTITY_FIELDS) as EntityName[];
+
+export const MODEL_ENTITY_NAMES = ENTITY_NAMES.filter(
+  (name) => ENTITY_FIELDS[name].fromModel !== false,
+);
 
 export function emptyEntities(): Entities {
   return {
@@ -130,11 +140,17 @@ export function sanitizeEntities(
   return entities;
 }
 
+/** Número vindo do modelo ou texto decimal vindo do extrator. */
 function sanitizeAmount(value: unknown): string | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  const text = String(value);
-  if (checkAmount(text) !== null) return null;
-  return value.toFixed(2);
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || checkAmount(String(value)) !== null) {
+      return null;
+    }
+    return value.toFixed(2);
+  }
+  if (typeof value !== 'string' || checkAmount(value) !== null) return null;
+  const [integer, decimals = ''] = value.split('.');
+  return `${integer.replace(/^0+(?=\d)/, '')}.${decimals.padEnd(2, '0')}`;
 }
 
 function sanitizeDate(value: unknown): string | null {
@@ -150,8 +166,8 @@ function sanitizeDescription(value: unknown): string | null {
   return text;
 }
 
-const comparable = (text: string) =>
-  text.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+export const comparable = (text: string) =>
+  text.normalize('NFD').replace(/\p{M}/gu, '').trim().toLowerCase();
 
 /**
  * Há nomes repetidos entre os tipos ("Outros", "Investimentos"); sem o tipo, o
