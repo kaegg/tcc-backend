@@ -17,7 +17,8 @@ export class HealthController {
   /**
    * Disponibilidade da API e das suas dependencias.
    *
-   * Responde 200 quando tudo opera e 503 quando alguma dependencia caiu. O
+   * Responde 200 quando o banco opera e 503 quando ele caiu. O Ollama aparece
+   * no corpo, mas nao muda o status: fora do ar, derruba so o chatbot. O
    * frontend precisa distinguir tres situacoes — API saudavel, API viva com o
    * banco fora, e API sem resposta — e so o par status HTTP + corpo separa as
    * duas primeiras.
@@ -31,12 +32,12 @@ export class HealthController {
   @Header('Cache-Control', 'no-store')
   @ApiOkResponse({
     type: HealthResponseDto,
-    description: 'A API e todas as dependencias estao operando.',
+    description: 'A API e o banco estao operando.',
   })
   @ApiServiceUnavailableResponse({
     type: HealthResponseDto,
     description:
-      'A API respondeu, mas alguma dependencia esta indisponivel. O corpo ' +
+      'A API respondeu, mas o banco esta indisponivel. O corpo ' +
       'segue o mesmo formato, com `status: "degradado"`.',
   })
   async check(

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Atualiza um lado da aplicação em produção sem tocar no outro. Chamado pelo CI de cada repositório.
+# Atualiza um lado da aplicação em produção sem tocar no outro. Chamado pelo auto-deploy.sh ou à mão.
 set -eu
 cd "$(dirname "$0")"
 

@@ -22,9 +22,30 @@ export class DatabaseHealthDto {
   latencyMs?: number;
 }
 
+export class LlmHealthDto {
+  @ApiProperty({
+    enum: ['ok', 'indisponivel'],
+    description:
+      'Se o Ollama respondeu e tem o modelo configurado instalado. Não entra ' +
+      'no estado agregado: com o LLM fora, só o chatbot fica indisponível.',
+  })
+  status!: DependencyStatus;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Tempo da verificacao, em milissegundos. Ausente quando o Ollama nao ' +
+      'respondeu.',
+  })
+  latencyMs?: number;
+}
+
 export class HealthDependenciesDto {
   @ApiProperty({ type: DatabaseHealthDto })
   database!: DatabaseHealthDto;
+
+  @ApiProperty({ type: LlmHealthDto })
+  llm!: LlmHealthDto;
 }
 
 /**
@@ -41,7 +62,8 @@ export class HealthResponseDto {
     enum: ['ok', 'degradado'],
     description:
       'Estado agregado. `degradado` acompanha o status HTTP 503 e indica que ' +
-      'a API respondeu, mas alguma dependencia nao esta operando.',
+      'a API respondeu, mas o banco nao esta operando. O LLM nao entra nesse ' +
+      'calculo.',
   })
   status!: HealthStatus;
 

@@ -51,6 +51,10 @@ services:
       # e o limite de cadastro por IP bloqueia o estudo. Seguro também pela porta local: o Caddy
       # sobrescreve o X-Forwarded-For de quem não é proxy confiável.
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-3}
+      OLLAMA_BASE_URL: http://ollama:11434
+      # O mesmo valor que o serviço `ollama` baixa; divergência deixa o chatbot sem modelo.
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-60000}
       TZ: America/Sao_Paulo
     depends_on:
       migrate:
