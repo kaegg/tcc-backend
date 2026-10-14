@@ -72,11 +72,12 @@ export function createPrismaStub(): PrismaStub {
  * Dublê do OllamaService: sem ele o `/api/health` de cada teste tentaria a
  * rede de verdade.
  */
-export type OllamaStub = { probe: jest.Mock };
+export type OllamaStub = { probe: jest.Mock; chatStream: jest.Mock };
 
 export function createOllamaStub(): OllamaStub {
   return {
     probe: jest.fn().mockResolvedValue({ status: 'ok', latencyMs: 1 }),
+    chatStream: jest.fn(),
   };
 }
 

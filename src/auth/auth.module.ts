@@ -35,5 +35,6 @@ import { throttlerOptions } from './throttling';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
   controllers: [AuthController],
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

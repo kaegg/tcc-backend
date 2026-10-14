@@ -1,0 +1,182 @@
+import { Logger } from '@nestjs/common';
+import {
+  ConnectedSocket,
+  MessageBody,
+  type OnGatewayConnection,
+  type OnGatewayDisconnect,
+  type OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
+} from '@nestjs/websockets';
+import { SkipThrottle } from '@nestjs/throttler';
+import type { Namespace, Socket } from 'socket.io';
+import { describeError } from '../common/utils/describe-error';
+import { redactSecrets } from '../common/utils/redact';
+import { LlmError } from '../llm/llm.errors';
+import { ChatAuthService, type SocketUser } from './chat-auth.service';
+import {
+  CHAT_NAMESPACE,
+  ChatEvent,
+  chatError,
+  parseCancel,
+  parseSendMessage,
+  type ChatErrorCode,
+  type SendMessageAck,
+  type SendMessagePayload,
+} from './chat.protocol';
+import { ChatService } from './chat.service';
+import { RateLimiter } from './rate-limiter';
+
+const MESSAGES_PER_MINUTE = 12;
+const MAX_CONNECTIONS_PER_USER = 3;
+
+interface ChatSocketData {
+  user: SocketUser;
+}
+
+const userOf = (socket: Socket): SocketUser =>
+  (socket.data as ChatSocketData).user;
+
+/**
+ * O `ThrottlerGuard` global só entende HTTP; o limite do chat é o
+ * `RateLimiter` por usuário abaixo.
+ */
+@SkipThrottle()
+@WebSocketGateway({ namespace: CHAT_NAMESPACE })
+export class ChatGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
+  private readonly logger = new Logger(ChatGateway.name);
+  private readonly limiter = new RateLimiter(MESSAGES_PER_MINUTE, 60_000);
+  private readonly connections = new Map<string, number>();
+  private readonly inFlight = new Map<
+    string,
+    { id: string; controller: AbortController }
+  >();
+
+  constructor(
+    private readonly chat: ChatService,
+    private readonly auth: ChatAuthService,
+  ) {}
+
+  afterInit(namespace: Namespace): void {
+    namespace.use((socket, next) => {
+      // O token vai em `auth`, nunca na query: a URL do upgrade aparece em
+      // log de proxy.
+      const token = (socket.handshake.auth as { token?: unknown }).token;
+
+      this.auth
+        .authenticate(token)
+        .then((user) => {
+          if (!user) return next(connectError('sessao_expirada'));
+          if (
+            (this.connections.get(user.id) ?? 0) >= MAX_CONNECTIONS_PER_USER
+          ) {
+            return next(connectError('limite_excedido'));
+          }
+          (socket.data as ChatSocketData).user = user;
+          next();
+        })
+        .catch((error: unknown) => {
+          this.logger.error(
+            redactSecrets(
+              `Falha ao autenticar socket: ${describeError(error)}`,
+            ),
+          );
+          next(connectError('erro_interno'));
+        });
+    });
+  }
+
+  handleConnection(socket: Socket): void {
+    const { id } = userOf(socket);
+    this.connections.set(id, (this.connections.get(id) ?? 0) + 1);
+  }
+
+  handleDisconnect(socket: Socket): void {
+    this.inFlight.get(socket.id)?.controller.abort();
+    this.inFlight.delete(socket.id);
+
+    const user = userOf(socket);
+    const remaining = (this.connections.get(user.id) ?? 1) - 1;
+    if (remaining > 0) this.connections.set(user.id, remaining);
+    else this.connections.delete(user.id);
+  }
+
+  @SubscribeMessage(ChatEvent.send)
+  async onSend(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() raw: unknown,
+  ): Promise<SendMessageAck> {
+    const payload = parseSendMessage(raw);
+    if (!payload) return reject('mensagem_invalida');
+
+    // A vaga é reservada antes do `await`: duas mensagens seguidas passariam
+    // juntas pela checagem enquanto a sessão é consultada.
+    if (this.inFlight.has(socket.id)) return reject('ocupado');
+    const controller = new AbortController();
+    this.inFlight.set(socket.id, { id: payload.id, controller });
+
+    const user = userOf(socket);
+    let refusal: ChatErrorCode | null = null;
+    if (!(await this.auth.isStillValid(user))) refusal = 'sessao_expirada';
+    else if (!this.limiter.tryConsume(user.id)) refusal = 'limite_excedido';
+
+    if (refusal) {
+      this.inFlight.delete(socket.id);
+      return reject(refusal);
+    }
+
+    void this.stream(socket, user, payload, controller);
+
+    return { ok: true };
+  }
+
+  @SubscribeMessage(ChatEvent.cancel)
+  onCancel(@ConnectedSocket() socket: Socket, @MessageBody() raw: unknown) {
+    const id = parseCancel(raw);
+    const current = this.inFlight.get(socket.id);
+    if (id && current?.id === id) current.controller.abort();
+  }
+
+  private async stream(
+    socket: Socket,
+    user: SocketUser,
+    payload: SendMessagePayload,
+    controller: AbortController,
+  ): Promise<void> {
+    try {
+      for await (const text of this.chat.streamReply(
+        user.id,
+        payload.conversationId,
+        payload.content,
+        controller.signal,
+      )) {
+        socket.emit(ChatEvent.chunk, { id: payload.id, text });
+      }
+      socket.emit(ChatEvent.end, { id: payload.id });
+    } catch (error) {
+      let code: ChatErrorCode = 'erro_interno';
+      if (error instanceof LlmError) code = error.kind;
+      else {
+        this.logger.error(
+          redactSecrets(`Falha no chat: ${describeError(error)}`),
+        );
+      }
+      socket.emit(ChatEvent.error, { id: payload.id, ...chatError(code) });
+    } finally {
+      if (this.inFlight.get(socket.id)?.controller === controller) {
+        this.inFlight.delete(socket.id);
+      }
+    }
+  }
+}
+
+function reject(code: ChatErrorCode): SendMessageAck {
+  return { ok: false, ...chatError(code) };
+}
+
+function connectError(code: ChatErrorCode): Error {
+  const { message } = chatError(code);
+  return Object.assign(new Error(message), { data: { code } });
+}
