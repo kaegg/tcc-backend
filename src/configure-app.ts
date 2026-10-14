@@ -6,6 +6,7 @@ import {
   buildCorsOriginChecker,
   parseCorsOrigins,
 } from './common/cors-origins';
+import { ChatIoAdapter } from './chat/chat-io.adapter';
 import { bodyParserErrorHandler } from './common/middleware/body-parser-errors';
 
 /**
@@ -81,6 +82,12 @@ export function configureApp(app: NestExpressApplication): void {
     allowedHeaders: ['Content-Type', 'Authorization'],
     maxAge: 86400,
   });
+
+  app.useWebSocketAdapter(
+    new ChatIoAdapter(app, allowedOrigins, (origin) =>
+      logger.warn(`Origem bloqueada no socket do chat: ${origin}`),
+    ),
+  );
 
   app.setGlobalPrefix(API_PREFIX);
 
