@@ -39,7 +39,12 @@ export class UsersService {
 
     try {
       const user = await this.prisma.user.create({
-        data: { name: dto.name, email: dto.email, passwordHash },
+        data: {
+          name: dto.name,
+          email: dto.email,
+          passwordHash,
+          termsAcceptedAt: new Date(),
+        },
         select: PUBLIC_FIELDS,
       });
 

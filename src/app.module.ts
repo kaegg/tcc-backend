@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { CategoriesModule } from './categories/categories.module';
+import { MetricsModule } from './metrics/metrics.module';
 import { ReportsModule } from './reports/reports.module';
 import { ChatModule } from './chat/chat.module';
 
@@ -22,6 +23,7 @@ import { ChatModule } from './chat/chat.module';
     CategoriesModule, // TCC-011 - categorias financeiras
     ReportsModule, // TCC-016 e TCC-017 - relatorios e resumo mensal
     ChatModule, // TCC-020 a TCC-022 - integracao com o Ollama, chatbot e gateway Socket.IO
+    MetricsModule, // TCC-030 - metricas de uso do estudo comparativo
   ],
 })
 export class AppModule {}

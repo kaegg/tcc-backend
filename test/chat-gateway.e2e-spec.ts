@@ -457,6 +457,7 @@ describe('Gateway do chat (TCC-022)', () => {
           outcome: 'registrado',
           report: null,
           kind: 'sucesso',
+          flow: 'registro',
         });
         expect(prisma.transaction.create).toHaveBeenCalledTimes(1);
         expect(ollama.chatStream).toHaveBeenCalledTimes(1);
@@ -524,6 +525,7 @@ describe('Gateway do chat (TCC-022)', () => {
         outcome: null,
         report: null,
         kind: 'informacao',
+        flow: null,
       });
       // A ajuda é escrita pelo backend (TCC-028): o texto do modelo não passa.
       expect(pedacos.join('')).toMatch(/^Posso registrar receitas e despesas/);

@@ -76,9 +76,15 @@ model User {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  /// Quando a conta aceitou os Termos de Uso, que informam a coleta anonima de
+  /// metricas para a pesquisa (TCC-030). Obrigatorio no cadastro; nulo so nas
+  /// contas anteriores aos termos, que nao entram na coleta. As metricas em si
+  /// nao apontam para o usuario.
+  termsAcceptedAt DateTime? @map("terms_accepted_at") @db.Timestamptz(3)
+
   /// Lados opostos das relacoes. O Prisma exige a declaracao nos dois lados —
   /// sem elas o `prisma validate` falha com "missing an opposite relation
-  /// field". Nao geram coluna alguma: a tabela `users` tem so os seis campos
+  /// field". Nao geram coluna alguma: a tabela `users` tem so os sete campos
   /// acima, e a chave estrangeira mora em `transactions.user_id` e em
   /// `conversations.user_id`. Servem apenas para navegar a relacao no client,
   /// e so carregam dado quando a consulta pedir `include` explicitamente.
@@ -214,13 +220,15 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
-/// Metrica de uso coletada no estudo comparativo.
+/// Metrica de uso coletada no estudo comparativo, de forma passiva: cada
+/// cadastro de lancamento e cada consulta de relatorio, em qualquer dos modos,
+/// das contas que aceitaram os Termos de Uso (TCC-030).
 ///
 /// Tabela deliberadamente desligada do dominio financeiro: nao ha chave
-/// estrangeira para User. O participante aparece so como codigo opaco, o que
-/// atende "os participantes estao identificados apenas por codigos"
-/// e "dados pessoais desnecessarios nao sao coletados", e permite
-/// exportar a base de analise sem carregar identidade junto.
+/// estrangeira para User. `participant_code` e um identificador aleatorio
+/// gerado no navegador, que o servidor nao consegue ligar a conta; atende "os
+/// participantes estao identificados apenas por codigos" e "dados pessoais
+/// desnecessarios nao sao coletados", e a base de analise sai sem identidade.
 model UsageMetric {
   id String @id @default(uuid(7)) @db.Uuid
   participantCode String @map("participant_code") @db.VarChar(40)
@@ -247,11 +255,10 @@ model UsageMetric {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  /// Uma linha por tarefa, por modo, por sessao. Impede a linha duplicada que
-  /// distorceria silenciosamente as medias da. Repeticao legitima
-  /// (piloto e execucao real) usa um `session_code` diferente.
-  @@unique([participantCode, sessionCode, mode, taskCode])
+  /// Sem unicidade: na coleta passiva a mesma pessoa registra varios
+  /// lancamentos na mesma sessao, e cada um e uma linha.
   @@index([participantCode])
+  @@index([sessionCode])
   @@index([mode, taskCode])
   @@map("usage_metrics")
 }

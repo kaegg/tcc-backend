@@ -1,6 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  Equals,
+  IsEmail,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { StrongPassword } from './strong-password.decorator';
 
 const trim = ({ value }: { value: unknown }): unknown =>
@@ -40,4 +46,14 @@ export class CreateUserDto {
 
   @StrongPassword()
   password!: string;
+
+  /**
+   * Aceite dos Termos de Uso, que informam a coleta anônima de métricas para a
+   * pesquisa (TCC-030). Sem ele não há conta, como nos termos de qualquer site.
+   */
+  @ApiProperty({ example: true })
+  @Equals(true, {
+    message: 'Para criar a conta, aceite os Termos de Uso.',
+  })
+  acceptTerms!: boolean;
 }
