@@ -326,6 +326,19 @@ describe('ChatService', () => {
       expect(chatStream).not.toHaveBeenCalled();
     });
 
+    it('conversa excluída leva o lançamento pendente, sem gravar', async () => {
+      modeloResponde(saida('registrar_lancamento', { type: 'despesa' }));
+      await enviar('gastei 30');
+      modeloResponde(saida('registrar_lancamento', { type: 'despesa' }));
+      await enviar('gastei 50', 'u1', 'c2');
+
+      service.forget('u1', 'c1');
+
+      expect(service.pendingSummary('u1', 'c1')).toBeNull();
+      expect(service.pendingSummary('u1', 'c2')).not.toBeNull();
+      expect(create).not.toHaveBeenCalled();
+    });
+
     it('cancela pelo botão da interface', async () => {
       modeloResponde(saida('registrar_lancamento', { type: 'despesa' }));
       await enviar('gastei 30');

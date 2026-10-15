@@ -384,6 +384,13 @@ export class ChatService {
     };
   }
 
+  /** Conversa excluída: o lançamento pendente some junto, sem gravar nada. */
+  forget(userId: string, conversationId: string): void {
+    this.pending.delete(userId, conversationId);
+    this.queries.delete(userId, conversationId);
+    this.memory.forget(userId, conversationId);
+  }
+
   /** Cancelamento pelo botão da interface, sem mensagem digitada. */
   cancelPending(userId: string, conversationId: string): string {
     const removed = this.pending.delete(userId, conversationId);

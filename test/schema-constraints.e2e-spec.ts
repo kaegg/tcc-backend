@@ -217,6 +217,51 @@ describeWithDatabase('Restricoes de integridade do esquema', () => {
     });
   });
 
+  describe('Exclusao de conversa do chatbot', () => {
+    it('leva as mensagens junto e nao toca nas metricas de uso', async () => {
+      const metric = await prisma.usageMetric.create({
+        data: {
+          participantCode: 'P98',
+          sessionCode: 'S-conversa',
+          mode: 'assistente',
+          taskCode: 'registro',
+          startedAt: new Date('2026-10-01T14:00:00Z'),
+        },
+      });
+      const conversation = await prisma.conversation.create({
+        data: {
+          userId,
+          title: 'Gastei 45 no mercado',
+          messages: {
+            create: [
+              { role: 'user', content: 'Gastei 45 no mercado' },
+              {
+                role: 'assistant',
+                content: 'Confira o cartão.',
+                kind: 'confirmacao',
+              },
+            ],
+          },
+        },
+      });
+
+      await prisma.conversation.deleteMany({
+        where: { id: conversation.id, userId },
+      });
+
+      expect(
+        await prisma.chatMessage.count({
+          where: { conversationId: conversation.id },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.usageMetric.findUnique({ where: { id: metric.id } }),
+      ).not.toBeNull();
+
+      await prisma.usageMetric.delete({ where: { id: metric.id } });
+    });
+  });
+
   describe('RNF08 - metrica de uso sem vinculo com o usuario', () => {
     it('grava a metrica sem exigir nenhum dado pessoal', async () => {
       const metric = await prisma.usageMetric.create({

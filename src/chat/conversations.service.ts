@@ -12,7 +12,7 @@ import type {
 } from './dto/conversation-response.dto';
 
 const RECENT_CONVERSATIONS = 20;
-const MAX_TITLE_CHARS = 120;
+export const MAX_TITLE_CHARS = 120;
 export const UNTITLED_CONVERSATION = 'Nova conversa';
 export const CONVERSA_NAO_ENCONTRADA = 'Conversa não encontrada.';
 
@@ -68,6 +68,39 @@ export class ConversationsService {
       },
       update: { updatedAt: new Date(now), messages: { create: rows } },
     });
+  }
+
+  /**
+   * As mensagens saem pela FK `ON DELETE CASCADE`. As métricas de uso não
+   * referenciam conversa nem usuário (são anônimas), então não mudam.
+   */
+  async remove(userId: string, conversationId: string): Promise<boolean> {
+    const { count } = await this.prisma.conversation.deleteMany({
+      where: { id: conversationId, ...ownedConversation(userId) },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Renomear não é atividade na conversa: o `updatedAt` vai explícito para o
+   * `@updatedAt` não a levar ao topo de "Conversas recentes".
+   */
+  async rename(
+    userId: string,
+    conversationId: string,
+    title: string,
+  ): Promise<ConversationSummaryDto | null> {
+    const where = { id: conversationId, ...ownedConversation(userId) };
+    const row = await this.prisma.conversation.findFirst({
+      where,
+      select: SUMMARY,
+    });
+    if (!row) return null;
+    const { count } = await this.prisma.conversation.updateMany({
+      where,
+      data: { title, updatedAt: row.updatedAt },
+    });
+    return count > 0 ? toSummary({ ...row, title }) : null;
   }
 
   async list(userId: string): Promise<ConversationSummaryDto[]> {

@@ -55,6 +55,12 @@ export class ConversationMemory {
     }
   }
 
+  forget(userId: string, conversationId: string): void {
+    const conversations = this.byUser.get(userId);
+    conversations?.delete(conversationId);
+    if (conversations?.size === 0) this.byUser.delete(userId);
+  }
+
   private evictIdle(): void {
     const limit = this.now() - IDLE_TTL_MS;
     for (const [userId, conversations] of this.byUser) {

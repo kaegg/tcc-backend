@@ -125,6 +125,92 @@ describe('GET /api/conversations', () => {
     expect(prisma.conversation.findFirst).toHaveBeenCalledTimes(1);
   });
 
+  describe('PATCH (renomear)', () => {
+    it('renomeia a conversa do usuário do token, com o nome aparado', async () => {
+      prisma.conversation.updateMany.mockResolvedValue({ count: 1 });
+      prisma.conversation.findFirst.mockResolvedValue({
+        id: CONVERSA,
+        title: 'Gastei 45 no mercado',
+        updatedAt: new Date('2026-10-15T12:00:00Z'),
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/conversations/${CONVERSA}`)
+        .set('Authorization', authorization)
+        .send({ title: '  Mercado   de outubro ' })
+        .expect(200);
+
+      expect(res.body).toEqual({
+        id: CONVERSA,
+        title: 'Mercado de outubro',
+        updatedAt: '2026-10-15T12:00:00.000Z',
+      });
+      expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
+        where: { id: CONVERSA, userId: USUARIO },
+        data: {
+          title: 'Mercado de outubro',
+          updatedAt: new Date('2026-10-15T12:00:00Z'),
+        },
+      });
+    });
+
+    it('recusa nome vazio ou longo demais sem tocar no banco', async () => {
+      for (const title of ['   ', 'x'.repeat(121), 42]) {
+        await request(app.getHttpServer())
+          .patch(`/api/conversations/${CONVERSA}`)
+          .set('Authorization', authorization)
+          .send({ title })
+          .expect(400);
+      }
+      expect(prisma.conversation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('responde 404 para conversa de outro usuário ou inexistente', async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/conversations/${CONVERSA}`)
+        .set('Authorization', authorization)
+        .send({ title: 'Outro nome' })
+        .expect(404);
+    });
+  });
+
+  describe('DELETE', () => {
+    it('exclui a conversa do usuário do token e responde 204', async () => {
+      prisma.conversation.deleteMany.mockResolvedValue({ count: 1 });
+
+      await request(app.getHttpServer())
+        .delete(`/api/conversations/${CONVERSA}`)
+        .set('Authorization', authorization)
+        .expect(204);
+
+      // As mensagens saem pelo ON DELETE CASCADE da FK, conferido no banco
+      // real em `schema-constraints.e2e-spec.ts`.
+      expect(prisma.conversation.deleteMany).toHaveBeenCalledWith({
+        where: { id: CONVERSA, userId: USUARIO },
+      });
+    });
+
+    it('responde 404 para conversa de outro usuário, inexistente ou id inválido', async () => {
+      await request(app.getHttpServer())
+        .delete(`/api/conversations/${CONVERSA}`)
+        .set('Authorization', authorization)
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .delete('/api/conversations/c1')
+        .set('Authorization', authorization)
+        .expect(404);
+      expect(prisma.conversation.deleteMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('exige sessão', async () => {
+      await request(app.getHttpServer())
+        .delete(`/api/conversations/${CONVERSA}`)
+        .expect(401);
+      expect(prisma.conversation.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
   it('exige sessão', async () => {
     await request(app.getHttpServer()).get('/api/conversations').expect(401);
   });

@@ -33,6 +33,8 @@ export type PrismaStub = {
     upsert: jest.Mock;
     findMany: jest.Mock;
     findFirst: jest.Mock;
+    deleteMany: jest.Mock;
+    updateMany: jest.Mock;
   };
   session: {
     create: jest.Mock;
@@ -67,6 +69,8 @@ export function createPrismaStub(): PrismaStub {
       upsert: jest.fn().mockResolvedValue({}),
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(null),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     session: {
       create: jest.fn(),

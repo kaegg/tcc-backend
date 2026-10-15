@@ -1,13 +1,20 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
   Header,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
@@ -25,10 +32,19 @@ import {
 import {
   ConversationDetailDto,
   ConversationListResponseDto,
+  ConversationSummaryDto,
 } from './dto/conversation-response.dto';
+import { RenameConversationDto } from './dto/rename-conversation.dto';
+
+/** Id que não é UUID responde como conversa inexistente. */
+function uuidOr404(): ParseUUIDPipe {
+  return new ParseUUIDPipe({
+    exceptionFactory: () => new NotFoundException(CONVERSA_NAO_ENCONTRADA),
+  });
+}
 
 /**
- * Leitura do histórico. Gravar fica com o gateway, que é quem sabe o que foi
+ * Histórico do chatbot. Gravar fica com o gateway, que é quem sabe o que foi
  * respondido: o cliente não envia falas do assistente.
  */
 @ApiTags('conversations')
@@ -57,13 +73,7 @@ export class ConversationsController {
   @ApiUnauthorizedResponse({ description: 'Sessão inválida ou expirada.' })
   async find(
     @CurrentUser() user: AuthenticatedUser,
-    @Param(
-      'id',
-      new ParseUUIDPipe({
-        exceptionFactory: () => new NotFoundException(CONVERSA_NAO_ENCONTRADA),
-      }),
-    )
-    id: string,
+    @Param('id', uuidOr404()) id: string,
   ): Promise<ConversationDetailDto> {
     const conversation = await this.conversations.find(user.id, id);
     if (!conversation) throw new NotFoundException(CONVERSA_NAO_ENCONTRADA);
@@ -71,5 +81,37 @@ export class ConversationsController {
       ...conversation,
       pending: this.chat.pendingSummary(user.id, id),
     };
+  }
+
+  @Patch(':id')
+  @Header('Cache-Control', 'no-store')
+  @ApiOkResponse({ type: ConversationSummaryDto })
+  @ApiBadRequestResponse({ description: 'Nome vazio ou longo demais.' })
+  @ApiNotFoundResponse({ description: CONVERSA_NAO_ENCONTRADA })
+  @ApiUnauthorizedResponse({ description: 'Sessão inválida ou expirada.' })
+  async rename(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', uuidOr404()) id: string,
+    @Body() body: RenameConversationDto,
+  ): Promise<ConversationSummaryDto> {
+    const renamed = await this.conversations.rename(user.id, id, body.title);
+    if (!renamed) throw new NotFoundException(CONVERSA_NAO_ENCONTRADA);
+    return renamed;
+  }
+
+  /** Exclusão definitiva, com as mensagens; conversa alheia responde 404. */
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse({ description: 'Conversa excluída.' })
+  @ApiNotFoundResponse({ description: CONVERSA_NAO_ENCONTRADA })
+  @ApiUnauthorizedResponse({ description: 'Sessão inválida ou expirada.' })
+  async remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', uuidOr404()) id: string,
+  ): Promise<void> {
+    if (!(await this.conversations.remove(user.id, id))) {
+      throw new NotFoundException(CONVERSA_NAO_ENCONTRADA);
+    }
+    this.chat.forget(user.id, id);
   }
 }

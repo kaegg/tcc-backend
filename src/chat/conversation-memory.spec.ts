@@ -19,6 +19,16 @@ describe('ConversationMemory', () => {
     expect(memory.history('u1', 'c2')).toEqual([]);
   });
 
+  it('esquece só a conversa excluída', () => {
+    memory.append('u1', 'c1', { role: 'user', content: 'a' });
+    memory.append('u1', 'c2', { role: 'user', content: 'b' });
+
+    memory.forget('u1', 'c1');
+
+    expect(memory.history('u1', 'c1')).toEqual([]);
+    expect(memory.history('u1', 'c2')).toHaveLength(1);
+  });
+
   it('guarda só as falas mais recentes', () => {
     for (let i = 0; i < 20; i++) {
       memory.append('u1', 'c1', { role: 'user', content: String(i) });
