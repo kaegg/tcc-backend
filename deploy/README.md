@@ -159,6 +159,33 @@ rm deploy-pausado
 Fixar `BACKEND_TAG` ou `FRONTEND_TAG` no `.env` também congela aquele lado. Para rodar `deploy.sh` à mão sem
 disputar com o automático, pausar antes.
 
+## Métricas de uso (estudo)
+
+A coleta é passiva e anônima: cada cadastro de lançamento e cada consulta de relatório, nos dois modos, de contas que
+aceitaram os Termos de Uso no cadastro (TCC-030). Só funciona com `USAGE_METRICS_ENABLED=true` no `.env` e a API
+reiniciada; com qualquer outro valor, nada é gravado. **Deixe desligada nos seus testes e ligue só durante a aplicação
+do estudo.**
+
+Exportar (o separador `;` e o BOM abrem direto no Excel em português):
+
+```bash
+docker compose exec -T backend node dist/src/metrics/export-metrics --desde=2026-10-20 > "metricas-$(date +%F).csv"
+```
+
+`--desde` descarta o que foi coletado antes do início da aplicação; `--separador=,` troca o separador.
+
+## Documentação da API (Swagger)
+
+`/api/docs` só abre pelo túnel SSH (`http://localhost:8080/api/docs`). Pelo domínio público, o Caddy responde 404 (regra
+no `Caddyfile` do frontend). Depois de cada deploy do `web`, confira no servidor:
+
+```bash
+docker compose exec web caddy validate --config /etc/caddy/Caddyfile
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/docs/                                 # 200
+curl -s -o /dev/null -w "%{http_code}\n" -H "Cf-Connecting-Ip: 1.2.3.4" http://localhost:8080/api/docs/  # 404
+curl -s -o /dev/null -w "%{http_code}\n" https://intellifinance.com.br/api/docs/                        # 404
+```
+
 ## Operação
 
 ```bash

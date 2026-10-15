@@ -28,6 +28,7 @@ export type PrismaStub = {
     groupBy: jest.Mock;
   };
   user: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+  usageMetric: { create: jest.Mock; update: jest.Mock };
   session: {
     create: jest.Mock;
     findUnique: jest.Mock;
@@ -56,6 +57,7 @@ export function createPrismaStub(): PrismaStub {
       groupBy: jest.fn(),
     },
     user: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    usageMetric: { create: jest.fn(), update: jest.fn() },
     session: {
       create: jest.fn(),
       findUnique: jest.fn(),

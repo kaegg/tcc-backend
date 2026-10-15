@@ -17,6 +17,7 @@ const CADASTRO_VALIDO = {
   name: 'Kauan Eguchi',
   email: 'kauan@exemplo.com',
   password: SENHA,
+  acceptTerms: true,
 };
 
 const LINHA_CRIADA = {
@@ -94,6 +95,42 @@ describe('POST /api/users (TCC-008)', () => {
     });
   });
 
+  describe('termos de uso (TCC-030)', () => {
+    it.each([
+      ['ausente', {}],
+      ['recusado', { acceptTerms: false }],
+      ['texto no lugar de booleano', { acceptTerms: 'true' }],
+    ])('sem aceite (%s), a conta não é criada', async (_, aceite) => {
+      const semAceite: Partial<typeof CADASTRO_VALIDO> = {
+        ...CADASTRO_VALIDO,
+      };
+      delete semAceite.acceptTerms;
+
+      const res = await request(app.getHttpServer())
+        .post('/api/users')
+        .send({ ...semAceite, ...aceite })
+        .expect(400);
+
+      expect(erro(res).fieldErrors?.acceptTerms).toEqual([
+        'Para criar a conta, aceite os Termos de Uso.',
+      ]);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('grava quando os termos foram aceitos', async () => {
+      const antes = Date.now();
+
+      await request(app.getHttpServer())
+        .post('/api/users')
+        .send(CADASTRO_VALIDO)
+        .expect(201);
+
+      const aceite = dadosGravados(prisma).termsAcceptedAt as Date;
+      expect(aceite.getTime()).toBeGreaterThanOrEqual(antes);
+      expect(dadosGravados(prisma).acceptTerms).toBeUndefined();
+    });
+  });
+
   describe('a senha nunca aparece em texto puro', () => {
     it('nao volta na resposta, em nenhum campo', async () => {
       const res = await request(app.getHttpServer())
@@ -154,7 +191,12 @@ describe('POST /api/users (TCC-008)', () => {
     it('recusa nome curto, e-mail malformado e senha fraca de uma vez', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/users')
-        .send({ name: 'Ab', email: 'sem-arroba', password: 'curta' })
+        .send({
+          name: 'Ab',
+          email: 'sem-arroba',
+          password: 'curta',
+          acceptTerms: true,
+        })
         .expect(400);
 
       const { fieldErrors } = erro(res);
@@ -179,7 +221,12 @@ describe('POST /api/users (TCC-008)', () => {
     it('mantem `message` como lista plana, o formato da TCC-004', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/users')
-        .send({ name: 'Ab', email: 'sem-arroba', password: 'curta' })
+        .send({
+          name: 'Ab',
+          email: 'sem-arroba',
+          password: 'curta',
+          acceptTerms: true,
+        })
         .expect(400);
 
       const { message } = erro(res);

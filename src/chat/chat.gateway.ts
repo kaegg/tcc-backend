@@ -28,6 +28,7 @@ import {
   type SendMessagePayload,
 } from './chat.protocol';
 import { ChatService, type OperationFailure } from './chat.service';
+import type { Interpretation } from './interpretation/interpretation';
 import { RateLimiter } from './rate-limiter';
 
 const MESSAGES_PER_MINUTE = 12;
@@ -257,6 +258,7 @@ export class ChatGateway
         outcome: step.value.outcome ?? null,
         report: step.value.report ?? null,
         kind: step.value.kind ?? 'informacao',
+        flow: flowOf(step.value),
       });
     } catch (error) {
       let code: ChatErrorCode = 'erro_interno';
@@ -273,6 +275,24 @@ export class ChatGateway
       }
     }
   }
+}
+
+/**
+ * A que tarefa medida a resposta pertence (TCC-030): o navegador cronometra o
+ * cadastro e a consulta pelo assistente sem saber interpretar a conversa.
+ */
+function flowOf(result: Interpretation): 'registro' | 'consulta' | null {
+  if (result.intent === 'registrar_lancamento' || result.outcome) {
+    return 'registro';
+  }
+  if (result.intent === 'confirmar') return 'registro';
+  if (
+    result.intent === 'consultar_relatorio' ||
+    result.intent === 'obter_resumo'
+  ) {
+    return 'consulta';
+  }
+  return null;
 }
 
 function reject(code: ChatErrorCode): SendMessageAck {
