@@ -19,6 +19,7 @@ import {
 } from './create-test-app';
 
 const USUARIO = '0199a1b2-c3d4-7000-8000-0000000000a1';
+const CONVERSA = '0199a1b2-c3d4-7000-8000-0000000000d1';
 const SESSAO = '0199a1b2-c3d4-7000-8000-0000000000b1';
 const ALIMENTACAO = '0199a1b2-c3d4-7000-8000-00000000c001';
 const SALARIO = '0199a1b2-c3d4-7000-8000-00000000c101';
@@ -167,7 +168,7 @@ describe('Paridade entre formulário e chatbot (TCC-029)', () => {
     );
     await socket.emitWithAck('message:send', {
       id,
-      conversationId: 'c1',
+      conversationId: CONVERSA,
       content: texto,
     });
     const end = await fim;
@@ -177,7 +178,7 @@ describe('Paridade entre formulário e chatbot (TCC-029)', () => {
 
   const confirmar = (proposalId: string) =>
     socket.emitWithAck('operation:confirm', {
-      conversationId: 'c1',
+      conversationId: CONVERSA,
       proposalId,
     }) as Promise<Ack>;
 
@@ -272,7 +273,7 @@ describe('Paridade entre formulário e chatbot (TCC-029)', () => {
 
         const rest = await formulario().post(corpo).expect(400);
         const chat = (await socket.emitWithAck('operation:edit', {
-          conversationId: 'c1',
+          conversationId: CONVERSA,
           proposalId,
           values: corpo,
         })) as Ack;

@@ -19,6 +19,7 @@ import {
 } from './create-test-app';
 
 const USUARIO = '0199a1b2-c3d4-7000-8000-0000000000a1';
+const CONVERSA = '0199a1b2-c3d4-7000-8000-0000000000d1';
 const SESSAO = '0199a1b2-c3d4-7000-8000-0000000000b1';
 const CATEGORIA = '0199a1b2-c3d4-7000-8000-00000000c001';
 
@@ -112,10 +113,19 @@ describe('Gateway do chat (TCC-022)', () => {
     }
   }
 
+  /** Falas gravadas em cada chamada a `conversation.upsert`. */
+  function gravadas() {
+    return (
+      prisma.conversation.upsert.mock.calls as [
+        { create: { messages: { create: Record<string, unknown>[] } } },
+      ][]
+    ).map(([args]) => args.create.messages.create);
+  }
+
   const enviar = (socket: Socket, content: string, id = 'm1') =>
     socket.emitWithAck('message:send', {
       id,
-      conversationId: 'c1',
+      conversationId: CONVERSA,
       content,
     }) as Promise<Ack>;
 
@@ -309,12 +319,19 @@ describe('Gateway do chat (TCC-022)', () => {
       await fim;
 
       const ack = (await socket.emitWithAck('operation:cancel', {
-        conversationId: 'c1',
+        conversationId: CONVERSA,
       })) as Ack & { reply?: string };
 
       expect(ack).toMatchObject({ ok: true });
       expect(ack.reply).toMatch(/Nada foi registrado/);
       expect(prisma.transaction.create).not.toHaveBeenCalled();
+      expect(gravadas().at(-1)).toEqual([
+        expect.objectContaining({
+          role: 'assistant',
+          content: ack.reply,
+          kind: 'informacao',
+        }),
+      ]);
     });
 
     describe('confirmação e edição (TCC-026)', () => {
@@ -356,7 +373,7 @@ describe('Gateway do chat (TCC-022)', () => {
 
       const confirmar = (socket: Socket, proposalId: string) =>
         socket.emitWithAck('operation:confirm', {
-          conversationId: 'c1',
+          conversationId: CONVERSA,
           proposalId,
         }) as Promise<Ack & { reply?: string }>;
 
@@ -381,6 +398,14 @@ describe('Gateway do chat (TCC-022)', () => {
           source: 'assistente',
         });
 
+        expect(gravadas().at(-1)).toEqual([
+          expect.objectContaining({
+            role: 'assistant',
+            content: ack.reply,
+            kind: 'sucesso',
+          }),
+        ]);
+
         expect(await confirmar(socket, proposalId)).toMatchObject({
           ok: false,
           code: 'operacao_inexistente',
@@ -392,7 +417,7 @@ describe('Gateway do chat (TCC-022)', () => {
         const { socket, proposalId } = await comProposta();
 
         const editado = (await socket.emitWithAck('operation:edit', {
-          conversationId: 'c1',
+          conversationId: CONVERSA,
           proposalId,
           values: {
             type: 'despesa',
@@ -424,7 +449,7 @@ describe('Gateway do chat (TCC-022)', () => {
         const { socket, proposalId } = await comProposta();
 
         const ack = (await socket.emitWithAck('operation:edit', {
-          conversationId: 'c1',
+          conversationId: CONVERSA,
           proposalId,
           values: {
             type: 'despesa',
@@ -480,12 +505,12 @@ describe('Gateway do chat (TCC-022)', () => {
 
         expect(
           await socket.emitWithAck('operation:confirm', {
-            conversationId: 'c1',
+            conversationId: CONVERSA,
           }),
         ).toMatchObject({ ok: false, code: 'mensagem_invalida' });
         expect(
           await socket.emitWithAck('operation:edit', {
-            conversationId: 'c1',
+            conversationId: CONVERSA,
             proposalId: 'p1',
             values: 'tudo',
           }),
@@ -501,6 +526,79 @@ describe('Gateway do chat (TCC-022)', () => {
           conversationId: '../x',
         }),
       ).toMatchObject({ ok: false, code: 'mensagem_invalida' });
+    });
+  });
+
+  describe('histórico gravado', () => {
+    it('grava a troca concluída, com o texto entregue, na conversa do usuário do token', async () => {
+      ollama.chatStream.mockImplementation(() => responder('qualquer'));
+      const socket = await conectado();
+      const pedacos: string[] = [];
+      socket.on('reply:chunk', ({ text }: { text: string }) =>
+        pedacos.push(text),
+      );
+      const fim = esperar(socket, 'reply:end');
+
+      await enviar(socket, '  me ajuda  ');
+      await fim;
+
+      expect(prisma.conversation.upsert).toHaveBeenCalledTimes(1);
+      const [args] = prisma.conversation.upsert.mock.calls[0] as [
+        {
+          where: Record<string, unknown>;
+          create: Record<string, unknown>;
+        },
+      ];
+      expect(args.where).toEqual({ id: CONVERSA, userId: USUARIO });
+      expect(args.create).toMatchObject({
+        id: CONVERSA,
+        userId: USUARIO,
+        title: 'me ajuda',
+      });
+      const [usuario, assistente] = gravadas()[0];
+      expect(usuario).toMatchObject({
+        role: 'user',
+        content: 'me ajuda',
+        kind: null,
+      });
+      expect(assistente).toMatchObject({
+        role: 'assistant',
+        content: pedacos.join(''),
+        kind: 'informacao',
+        reportFrom: null,
+      });
+      expect((usuario.createdAt as Date).getTime()).toBeLessThan(
+        (assistente.createdAt as Date).getTime(),
+      );
+    });
+
+    it('não grava resposta interrompida nem com falha', async () => {
+      ollama.chatStream.mockImplementation(pendurado);
+      const socket = await conectado();
+      const cancelada = esperar(socket, 'reply:error');
+      await enviar(socket, 'qual a capital da França?');
+      await modeloChamado();
+      socket.emit('reply:cancel', { id: 'm1' });
+      await cancelada;
+
+      ollama.chatStream.mockImplementation(() => {
+        throw new LlmError('indisponivel');
+      });
+      const falha = esperar(socket, 'reply:error');
+      await enviar(socket, 'qual a capital da Itália?', 'm2');
+      await falha;
+
+      expect(prisma.conversation.upsert).not.toHaveBeenCalled();
+    });
+
+    it('entrega a resposta mesmo se a gravação falhar', async () => {
+      prisma.conversation.upsert.mockRejectedValue(new Error('banco fora'));
+      const socket = await conectado();
+      const fim = esperar<{ kind: string }>(socket, 'reply:end');
+
+      await enviar(socket, 'ajuda');
+
+      expect(await fim).toMatchObject({ kind: 'informacao' });
     });
   });
 

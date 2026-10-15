@@ -1,3 +1,4 @@
+import { isUUID } from 'class-validator';
 import type { LlmErrorKind } from '../llm/llm.errors';
 
 export const CHAT_NAMESPACE = '/chat';
@@ -70,14 +71,16 @@ export interface ReplyErrorPayload {
 
 const CLIENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
+/** A conversa é gravada com o id que o navegador gerou, então ele é um UUID. */
+const isConversationId = (value: unknown): value is string =>
+  typeof value === 'string' && isUUID(value);
+
 export function parseSendMessage(raw: unknown): SendMessagePayload | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const { id, conversationId, content } = raw as Record<string, unknown>;
 
   if (typeof id !== 'string' || !CLIENT_ID.test(id)) return null;
-  if (typeof conversationId !== 'string' || !CLIENT_ID.test(conversationId)) {
-    return null;
-  }
+  if (!isConversationId(conversationId)) return null;
   if (typeof content !== 'string') return null;
 
   const trimmed = content.trim();
@@ -95,9 +98,7 @@ export function parseCancel(raw: unknown): string | null {
 export function parseCancelOperation(raw: unknown): string | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const { conversationId } = raw as Record<string, unknown>;
-  return typeof conversationId === 'string' && CLIENT_ID.test(conversationId)
-    ? conversationId
-    : null;
+  return isConversationId(conversationId) ? conversationId : null;
 }
 
 export interface OperationPayload {
@@ -108,9 +109,7 @@ export interface OperationPayload {
 export function parseConfirmOperation(raw: unknown): OperationPayload | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const { conversationId, proposalId } = raw as Record<string, unknown>;
-  if (typeof conversationId !== 'string' || !CLIENT_ID.test(conversationId)) {
-    return null;
-  }
+  if (!isConversationId(conversationId)) return null;
   if (typeof proposalId !== 'string' || !CLIENT_ID.test(proposalId)) {
     return null;
   }

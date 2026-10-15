@@ -46,6 +46,18 @@ enum ChatRole {
   @@map("chat_role")
 }
 
+/// O que a resposta do assistente e para o usuario (TCC-028); a interface
+/// marca cada tipo ao reabrir a conversa. Espelha `src/chat/replies.ts`.
+enum ChatReplyKind {
+  pergunta
+  confirmacao
+  sucesso
+  erro
+  informacao
+
+  @@map("chat_reply_kind")
+}
+
 /// Modo de interacao medido no estudo comparativo.
 ///
 /// Repete os valores de TransactionSource de proposito: a tabela de metricas e
@@ -213,6 +225,10 @@ model ChatMessage {
   conversationId String   @map("conversation_id") @db.Uuid
   role           ChatRole
   content        String   @db.Text
+  kind           ChatReplyKind?
+  /// Periodo da consulta respondida, para a mensagem reaberta levar ao relatorio.
+  reportFrom DateTime? @map("report_from") @db.Date
+  reportTo   DateTime? @map("report_to") @db.Date
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 

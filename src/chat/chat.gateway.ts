@@ -28,6 +28,10 @@ import {
   type SendMessagePayload,
 } from './chat.protocol';
 import { ChatService, type OperationFailure } from './chat.service';
+import {
+  ConversationsService,
+  type RecordedMessage,
+} from './conversations.service';
 import type { Interpretation } from './interpretation/interpretation';
 import { RateLimiter } from './rate-limiter';
 
@@ -61,6 +65,7 @@ export class ChatGateway
   constructor(
     private readonly chat: ChatService,
     private readonly auth: ChatAuthService,
+    private readonly conversations: ConversationsService,
   ) {}
 
   afterInit(namespace: Namespace): void {
@@ -157,10 +162,11 @@ export class ChatGateway
     // Durante a resposta, o lançamento ainda pode ser atualizado por ela.
     if (this.inFlight.has(socket.id)) return reject('ocupado');
 
-    return {
-      ok: true,
-      reply: this.chat.cancelPending(user.id, conversationId),
-    };
+    const reply = this.chat.cancelPending(user.id, conversationId);
+    await this.record(user.id, conversationId, [
+      { role: 'assistant', content: reply, kind: 'informacao' },
+    ]);
+    return { ok: true, reply };
   }
 
   /** Registra o lançamento proposto, na versão que o cartão mostra. */
@@ -179,6 +185,9 @@ export class ChatGateway
         payload.proposalId,
       );
       if (!result.ok) return rejectOperation(result);
+      await this.record(user.id, payload.conversationId, [
+        { role: 'assistant', content: result.reply, kind: 'sucesso' },
+      ]);
       return { ok: true as const, reply: result.reply };
     });
   }
@@ -234,6 +243,25 @@ export class ChatGateway
     }
   }
 
+  /**
+   * Só a troca concluída é gravada, como no histórico do modelo: resposta
+   * interrompida ou com falha não entra, e "Tentar novamente" não duplica a
+   * fala do usuário. Falha ao gravar não tira do usuário a resposta já dada.
+   */
+  private async record(
+    userId: string,
+    conversationId: string,
+    messages: RecordedMessage[],
+  ): Promise<void> {
+    try {
+      await this.conversations.record(userId, conversationId, messages);
+    } catch (error) {
+      this.logger.error(
+        redactSecrets(`Falha ao gravar a conversa: ${describeError(error)}`),
+      );
+    }
+  }
+
   private async stream(
     socket: Socket,
     user: SocketUser,
@@ -247,17 +275,26 @@ export class ChatGateway
         payload.content,
         controller.signal,
       );
+      let text = '';
       let step = await reply.next();
       while (!step.done) {
+        text += step.value;
         socket.emit(ChatEvent.chunk, { id: payload.id, text: step.value });
         step = await reply.next();
       }
+      const kind = step.value.kind ?? 'informacao';
+      const report = step.value.report ?? null;
+      // Gravada antes do `reply:end`: recarregar logo depois já traz a troca.
+      await this.record(user.id, payload.conversationId, [
+        { role: 'user', content: payload.content },
+        { role: 'assistant', content: text, kind, report },
+      ]);
       socket.emit(ChatEvent.end, {
         id: payload.id,
         pending: this.chat.pendingSummary(user.id, payload.conversationId),
         outcome: step.value.outcome ?? null,
-        report: step.value.report ?? null,
-        kind: step.value.kind ?? 'informacao',
+        report,
+        kind,
         flow: flowOf(step.value),
       });
     } catch (error) {
